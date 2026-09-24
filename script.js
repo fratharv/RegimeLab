@@ -168,60 +168,65 @@ function setupCanvas(cv){
   return {ctx,w,h};
 }
 
+let view={a:0,b:1}, lastDraw=null;
+function viewRange(n){ const s=Math.max(0,Math.floor(view.a*(n-1))); return [s, Math.min(n-1,Math.max(s+10,Math.ceil(view.b*(n-1))))]; }
+function redraw(){ if(!lastDraw) return; drawMarketChart(lastDraw.prices,lastDraw.segs); drawEquityChart(lastDraw.equity,lastDraw.buyHold); }
+
 function drawMarketChart(prices, segs){
   const cv = document.getElementById('marketChart');
   const {ctx,w,h} = setupCanvas(cv);
   ctx.clearRect(0,0,w,h);
-  const padL=44,padR=10,padT=26,padB=22;
-  const min=Math.min(...prices), max=Math.max(...prices);
-  const pad=(max-min)*0.08||1;
-  const y0=min-pad, y1=max+pad;
-  const x = i => padL + (i/(prices.length-1))*(w-padL-padR);
+  const padL=44,padR=10,padT=26,padB=22, n=prices.length, [s0,e0]=viewRange(n);
+  const vis=prices.slice(s0,e0+1), min=Math.min(...vis), max=Math.max(...vis);
+  const pad=(max-min)*0.08||1, y0=min-pad, y1=max+pad;
+  const x = i => padL + ((i-s0)/(e0-s0))*(w-padL-padR);
   const y = v => padT + (1-(v-y0)/(y1-y0))*(h-padT-padB);
-
-  segs.forEach(s=>{
-    ctx.fillStyle = REGIME_COLOR[s.regime]+'22';
-    const x0=x(s.start), x1=x(Math.min(s.end,prices.length-1));
-    ctx.fillRect(x0,padT,x1-x0,h-padT-padB);
-    ctx.strokeStyle = REGIME_COLOR[s.regime]+'55';
-    ctx.beginPath(); ctx.moveTo(x0,padT); ctx.lineTo(x0,h-padB); ctx.stroke();
-    ctx.fillStyle = REGIME_COLOR[s.regime];
-    ctx.font='600 10px -apple-system,sans-serif'; ctx.textAlign='center';
-    if(x1-x0>50) ctx.fillText(REGIME_NAME[s.regime], (x0+x1)/2, padT-8);
-  });
-
+  const dec=(y1-y0)<10?2:(y1-y0)<50?1:0;
   ctx.strokeStyle='#1f2937'; ctx.lineWidth=1;
-  for(let g=0;g<=4;g++){ const v=y0+g*(y1-y0)/4; const yy=y(v);
+  for(let g=0;g<=4;g++){ const v=y0+g*(y1-y0)/4, yy=y(v);
     ctx.beginPath();ctx.moveTo(padL,yy);ctx.lineTo(w-padR,yy);ctx.stroke();
     ctx.fillStyle='#6b7688'; ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='right';
-    ctx.fillText(v.toFixed(0), padL-6, yy+3);
+    ctx.fillText(v.toFixed(dec), padL-6, yy+3);
   }
-
+  ctx.save(); ctx.beginPath(); ctx.rect(padL,0,w-padL-padR,h); ctx.clip();
+  segs.forEach(sg=>{
+    if(sg.end<s0||sg.start>e0) return;
+    const x0=x(sg.start), x1=x(Math.min(sg.end,n-1)), c0=Math.max(x0,padL), c1=Math.min(x1,w-padR);
+    ctx.fillStyle=REGIME_COLOR[sg.regime]+'22'; ctx.fillRect(c0,padT,c1-c0,h-padT-padB);
+    ctx.strokeStyle=REGIME_COLOR[sg.regime]+'55'; ctx.beginPath(); ctx.moveTo(x0,padT); ctx.lineTo(x0,h-padB); ctx.stroke();
+    ctx.fillStyle=REGIME_COLOR[sg.regime]; ctx.font='600 10px -apple-system,sans-serif'; ctx.textAlign='center';
+    if(c1-c0>50) ctx.fillText(REGIME_NAME[sg.regime], (c0+c1)/2, padT-8);
+  });
   ctx.strokeStyle='#3b82f6'; ctx.lineWidth=1.6; ctx.beginPath();
-  prices.forEach((p,i)=>{ i===0?ctx.moveTo(x(i),y(p)):ctx.lineTo(x(i),y(p)); });
-  ctx.stroke();
+  const st=Math.max(s0-1,0);
+  for(let i=st;i<=Math.min(e0+1,n-1);i++){ i===st?ctx.moveTo(x(i),y(prices[i])):ctx.lineTo(x(i),y(prices[i])); }
+  ctx.stroke(); ctx.restore();
 }
 
 function drawEquityChart(equity, buyHold){
   const cv = document.getElementById('equityChart');
   const {ctx,w,h} = setupCanvas(cv);
   ctx.clearRect(0,0,w,h);
-  const padL=48,padR=10,padT=10,padB=20;
-  const all = equity.concat(buyHold);
+  const padL=48,padR=10,padT=10,padB=20, n=equity.length, [s0,e0]=viewRange(n);
+  const all = equity.slice(s0,e0+1).concat(buyHold.slice(s0,e0+1));
   const min=Math.min(...all), max=Math.max(...all); const pad=(max-min)*0.08||1;
   const y0=min-pad, y1=max+pad;
-  const x = i => padL + (i/(equity.length-1))*(w-padL-padR);
+  const x = i => padL + ((i-s0)/(e0-s0))*(w-padL-padR);
   const y = v => padT + (1-(v-y0)/(y1-y0))*(h-padT-padB);
-  ctx.strokeStyle='#1f2937';
+  ctx.strokeStyle='#1f2937'; ctx.lineWidth=1;
   for(let g=0;g<=4;g++){ const v=y0+g*(y1-y0)/4; const yy=y(v);
     ctx.beginPath();ctx.moveTo(padL,yy);ctx.lineTo(w-padR,yy);ctx.stroke();
     ctx.fillStyle='#6b7688'; ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='right';
-    ctx.fillText('₹'+Math.round(v/1000)+'k', padL-6, yy+3);
+    ctx.fillText('₹'+((y1-y0)<10000?(v/1000).toFixed(1):Math.round(v/1000))+'k', padL-6, yy+3);
   }
-  ctx.strokeStyle='#556070'; ctx.lineWidth=1.2; ctx.beginPath();
-  buyHold.forEach((p,i)=>{ i===0?ctx.moveTo(x(i),y(p)):ctx.lineTo(x(i),y(p)); }); ctx.stroke();
-  ctx.strokeStyle='#22c55e'; ctx.lineWidth=1.8; ctx.beginPath();
-  equity.forEach((p,i)=>{ i===0?ctx.moveTo(x(i),y(p)):ctx.lineTo(x(i),y(p)); }); ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.rect(padL,0,w-padL-padR,h); ctx.clip();
+  const st=Math.max(s0-1,0), en=Math.min(e0+1,n-1);
+  [[buyHold,'#556070',1.2],[equity,'#22c55e',1.8]].forEach(([arr,c,lw])=>{
+    ctx.strokeStyle=c; ctx.lineWidth=lw; ctx.beginPath();
+    for(let i=st;i<=en;i++){ i===st?ctx.moveTo(x(i),y(arr[i])):ctx.lineTo(x(i),y(arr[i])); }
+    ctx.stroke();
+  });
+  ctx.restore();
 }
 
 function drawDonut(wins,losses){
@@ -259,7 +264,7 @@ let lastSegs=null, lastPrices=null, customData=null, lastSnap=null;
 function update(reseed){
   syncLabels();
   const p = getParams();
-  if(reseed) customData=null;
+  if(reseed){ customData=null; view={a:0,b:1}; }
   if(customData){ lastPrices=customData.prices; lastSegs=customData.segs; }
   else if(reseed || !lastSegs){
     lastSegs = buildRegimes(p.len, p.persist, p.trans);
@@ -276,8 +281,8 @@ function update(reseed){
   const rperf = regimePerf(segs, equity, trades);
   lastSnap = {m, rperf, n:prices.length, real:!!customData};
 
-  drawMarketChart(prices, segs);
-  drawEquityChart(equity, buyHold);
+  lastDraw={prices,segs,equity,buyHold};
+  redraw();
   drawDonut(m.wins, m.losses);
 
   document.getElementById('regimeLegend').innerHTML = Object.entries(REGIME_NAME)
@@ -337,6 +342,25 @@ document.querySelectorAll('.presets button').forEach(b=>{
     update(true);
   });
 });
+
+// ---------- Zoom / pan on the price chart (also drives the equity chart) ----------
+(function(){
+  const cv=document.getElementById('marketChart'), PL=44, PR=10;
+  const N=()=>lastDraw?lastDraw.prices.length:0;
+  const minSpan=()=>Math.min(1,15/Math.max(1,N()-1));
+  function set(a,b){ const sp=Math.min(1,Math.max(minSpan(),b-a)); a=Math.max(0,Math.min(1-sp,a)); view={a,b:a+sp}; redraw(); }
+  function zoom(f,fx){ const sp=view.b-view.a, ns=Math.min(1,Math.max(minSpan(),sp*f)), c=view.a+fx*sp; set(c-fx*ns,c-fx*ns+ns); }
+  const fxOf=ev=>{const r=cv.getBoundingClientRect(); return Math.max(0,Math.min(1,(ev.clientX-r.left-PL)/(r.width-PL-PR)));};
+  cv.addEventListener('wheel',ev=>{ev.preventDefault(); zoom(ev.deltaY>0?1.25:0.8,fxOf(ev));},{passive:false});
+  let drag=null;
+  cv.addEventListener('pointerdown',ev=>{drag={x:ev.clientX,a:view.a,sp:view.b-view.a}; cv.setPointerCapture(ev.pointerId);});
+  cv.addEventListener('pointermove',ev=>{ if(!drag) return; const r=cv.getBoundingClientRect(); const d=(ev.clientX-drag.x)/(r.width-PL-PR)*drag.sp; set(drag.a-d,drag.a-d+drag.sp); });
+  ['pointerup','pointercancel'].forEach(t=>cv.addEventListener(t,()=>{drag=null;}));
+  cv.addEventListener('dblclick',()=>set(0,1));
+  document.getElementById('zIn').onclick=()=>zoom(0.6,0.5);
+  document.getElementById('zOut').onclick=()=>zoom(1.66,0.5);
+  document.getElementById('zReset').onclick=()=>set(0,1);
+})();
 
 // ---------- Hooks for the AI copilot (ai.js) ----------
 function classifyRegimes(prices, win=40){
