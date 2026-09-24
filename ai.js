@@ -1,10 +1,7 @@
 // RegimeLab AI Copilot — talks to Qwen via Alibaba DashScope's OpenAI-compatible API.
 (function(){
 const $ = id => document.getElementById(id);
-const store = {
-  get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},
-  set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}
-};
+const ENDPOINT = window.REGIMELAB_AI_URL || '';
 const SYS = `You are the copilot inside RegimeLab, a synthetic-market lab that backtests a moving-average crossover strategy across market regimes (trending, mean_reverting, high_vol, shock).
 You receive CURRENT STATE (params, metrics, per-regime results) with every message. Comment briefly and concretely on what the numbers say and how to improve the strategy. Keep replies under 120 words.
 You can change the app. Reply ONLY with a JSON object: {"reply": string, "actions": {"params": {...}, "reseed": boolean}}. Omit "actions" if nothing should change.
@@ -15,20 +12,12 @@ You have NO live market data. If asked for a real stock like "today's Apple char
 Never invent performance numbers; only use CURRENT STATE.`;
 let hist = [], busy = false;
 
-$('aiKey').value = store.get('rl_key') || '';
-$('aiRegion').value = store.get('rl_region') || $('aiRegion').value;
-$('aiModel').value = store.get('rl_model') || 'qwen-plus';
-if(store.get('rl_key')) $('aiCfg').style.display='none';
-
 function toggle(open){
   $('aiPanel').classList.toggle('open',open); document.body.classList.toggle('ai-open',open);
   setTimeout(()=>window.dispatchEvent(new Event('resize')),250);
 }
-$('aiBtn').onclick=()=>{toggle(true); if(!$('aiLog').children.length) add('sys','Tell me what market to build or what to change, or tap “Analyze this run”. Paste your Qwen API key in ⚙ first.');};
+$('aiBtn').onclick=()=>{toggle(true); if(!$('aiLog').children.length) add('sys','Tell me what market to build or what to change, or tap “Analyze this run”.');};
 $('aiClose').onclick=()=>toggle(false);
-$('aiCfgBtn').onclick=()=>{const c=$('aiCfg'); c.style.display=c.style.display==='none'?'flex':'none';};
-['aiKey','aiRegion','aiModel'].forEach(id=>$(id).addEventListener('change',()=>{
-  store.set('rl_key',$('aiKey').value.trim()); store.set('rl_region',$('aiRegion').value); store.set('rl_model',$('aiModel').value);}));
 
 function add(cls,text,applied){
   const d=document.createElement('div'); d.className='msg '+cls; d.textContent=text;
@@ -36,35 +25,42 @@ function add(cls,text,applied){
   $('aiLog').appendChild(d); $('aiLog').scrollTop=1e9; return d;
 }
 
+// Offline fallback so common commands still work instantly if the AI is unreachable.
+function localIntent(t){
+  t=t.toLowerCase(); const p={}, has=(...w)=>w.some(x=>t.includes(x));
+  if(has('apple','aapl')) Object.assign(p,{trend:.6,meanrev:.2,vol:.95,shockp:.03,shockm:.07});
+  if(has('trending','uptrend','bull')) Object.assign(p,{trend:.85,meanrev:.1});
+  if(has('sideways','choppy','mean rever','range')) Object.assign(p,{trend:.15,meanrev:.85});
+  if(has('volatile','volatility','harder','stress')) p.vol=.9;
+  if(has('calm','low vol','stable')) p.vol=.2;
+  if(has('crash','shock')) Object.assign(p,{shockp:.15,shockm:.18});
+  if(has('tight')) p.sl=1; if(has('wider stop','wide stop')) p.sl=6;
+  if(has('longer','1000 periods','more data')) p.len=3000;
+  return Object.keys(p).length?{reply:'(Offline mode) Applied your request. Charts updated.',actions:{params:p,reseed:true}}
+    :{reply:'The AI is unavailable and I could not parse that offline. Try “trending market”, “choppy market”, “more volatile”, “add shocks” or “Apple-like market”.'};
+}
+
 async function ask(text){
   if(busy||!text.trim()) return;
-  const key=$('aiKey').value.trim();
-  if(!key){ $('aiCfg').style.display='flex'; add('err','Enter your Qwen API key in ⚙ first.'); return; }
-  store.set('rl_key',key);
   busy=true; $('aiSend').disabled=true; add('user',text);
   const wait=add('sys','Thinking…');
+  let out;
   try{
-    const res=await fetch($('aiRegion').value+'/chat/completions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({model:$('aiModel').value,temperature:0.4,response_format:{type:'json_object'},
+    if(!ENDPOINT) throw new Error('no endpoint');
+    const res=await fetch(ENDPOINT,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({temperature:0.4,response_format:{type:'json_object'},
         messages:[{role:'system',content:SYS},...hist.slice(-8),
           {role:'user',content:'CURRENT STATE:\n'+JSON.stringify(RL.snapshot())+'\n\nUSER: '+text}]})
     });
-    if(!res.ok){
-      const t=await res.text();
-      throw new Error(res.status===401?'Invalid API key, or key/region mismatch (keys only work in the region they were created in).':'API error '+res.status+': '+t.slice(0,200));
-    }
+    if(!res.ok) throw new Error('API '+res.status);
     const data=await res.json();
     const raw=(data.choices[0].message.content||'').replace(/^```json|```$/g,'').trim();
-    let out; try{ out=JSON.parse(raw); }catch(e){ out={reply:raw}; }
-    const applied = out.actions ? RL.apply(out.actions) : [];
-    wait.remove(); add('bot',out.reply||'Done.',applied);
-    hist.push({role:'user',content:text},{role:'assistant',content:out.reply||''});
-  }catch(e){
-    wait.remove();
-    add('err', e instanceof TypeError ? 'Network/CORS error. Check your connection and region, and that the page is served over http(s).' : e.message);
-  }
+    try{ out=JSON.parse(raw); }catch(e){ out={reply:raw}; }
+  }catch(e){ out=localIntent(text); }
+  const applied = out.actions ? RL.apply(out.actions) : [];
+  wait.remove(); add('bot',out.reply||'Done.',applied);
+  hist.push({role:'user',content:text},{role:'assistant',content:out.reply||''});
   busy=false; $('aiSend').disabled=false;
 }
 
