@@ -2,7 +2,7 @@
     "use strict";
 
     const ENDPOINT =
-        "http://localhost:3000/api/copilot";
+        "https://regimelab.onrender.com/";
 
     const panel =
         document.getElementById("copilotPanel");
