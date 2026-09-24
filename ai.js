@@ -1,68 +1,173 @@
+/* ============================================================
+   RegimeLab — AI Copilot frontend
+   Talks to a private backend, never to OpenAI directly.
+   ============================================================ */
 
 (function () {
-  const $ = id => document.getElementById(id);
+  "use strict";
 
+  // ---------------------------------------------------------------
+  // CONFIGURE YOUR BACKEND URL HERE.
+  //
+  // Local development (Node backend running on your machine):
+  //   const ENDPOINT = "http://localhost:3000/api/copilot";
+  //
+  // Production (after you deploy the backend somewhere, e.g. Render,
+  // Railway, Fly.io, a VPS, etc.):
+  //   const ENDPOINT = "https://YOUR-BACKEND-DOMAIN/api/copilot";
+  // ---------------------------------------------------------------
+  const ENDPOINT = "http://localhost:3000/api/copilot";
 
-  const ENDPOINT =
-    window.REGIMELAB_AI_URL ||
-    "http://localhost:3000/api/copilot";
+  const ALLOWED_PARAM_KEYS = [
+    "trend", "meanrev", "vol", "shockp", "shockm",
+    "persist", "trans", "len", "cap", "ma", "sl", "tp", "ps",
+  ];
 
-  const SYS = `
-You are the AI Copilot inside RegimeLab.
+  let backendReachable = null; // null = unknown, true/false once tested
 
-RegimeLab is a synthetic-market laboratory for testing trading strategies
-across different market regimes.
+  function el(id) {
+    return document.getElementById(id);
+  }
 
-The available regimes are:
-- trending
-- mean_reverting
-- high_vol
-- shock
+  function openPanel() {
+    el("copilotPanel").classList.add("open");
+    el("copilotOverlay").classList.add("open");
+    el("copilotInput").focus();
+  }
 
-The user can control:
-- trend
-- mean reversion
-- volatility
-- shock probability
-- shock magnitude
-- persistence
-- regime transition probability
-- simulation length
-- initial capital
-- moving-average period
-- stop loss
-- take profit
-- position size
+  function closePanel() {
+    el("copilotPanel").classList.remove("open");
+    el("copilotOverlay").classList.remove("open");
+  }
 
-The current strategy is a moving-average based strategy.
+  function appendMessage(text, cls) {
+    const log = el("copilotLog");
+    const div = document.createElement("div");
+    div.className = "msg " + cls;
+    div.textContent = text;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+    return div;
+  }
 
-You receive CURRENT STATE with every request.
+  function setBackendStatus(text) {
+    const s = el("copilotBackendStatus");
+    if (s) s.textContent = text;
+  }
 
-Your job:
-1. Understand what the current simulation is doing.
-2. Explain important performance results briefly.
-3. Suggest useful parameter changes.
-4. Apply changes when the user explicitly asks you to change the simulation.
-5. Never invent performance numbers.
-6. Only discuss numbers that exist in CURRENT STATE.
-7. If the user asks for a real stock, explain that RegimeLab does not automatically
-   retrieve live market data and suggest uploading a CSV if exact historical data
-   is required.
-8. Keep responses below 120 words.
+  function sanitizeActions(actions) {
+    if (!actions || typeof actions !== "object") return null;
+    const out = {};
+    if (actions.params && typeof actions.params === "object") {
+      const p = {};
+      for (const key of ALLOWED_PARAM_KEYS) {
+        if (actions.params[key] !== undefined) {
+          const v = Number(actions.params[key]);
+          if (Number.isFinite(v)) p[key] = v;
+        }
+      }
+      if (Object.keys(p).length > 0) out.params = p;
+    }
+    if (actions.reseed === true) out.reseed = true;
+    return Object.keys(out).length > 0 ? out : null;
+  }
 
-IMPORTANT:
-Return ONLY valid JSON.
+  async function sendToBackend(message) {
+    const state = window.RL ? window.RL.snapshot() : null;
 
-Format:
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, state }),
+    });
 
-{
-  "reply": "short explanation",
-  "actions": {
-    "params": {
-      "trend": 0.8,
-      "meanrev": 0.2
-    },
-    "reseed": true
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const errBody = await res.json();
+        detail = errBody && errBody.error ? errBody.error : "";
+      } catch (e) {
+        /* ignore */
+      }
+      throw new Error(detail || `Backend responded with status ${res.status}.`);
+    }
+
+    const data = await res.json();
+    if (!data || typeof data.reply !== "string") {
+      throw new Error("Backend returned an unexpected response shape.");
+    }
+    return data;
+  }
+
+  async function handleSend(rawMessage) {
+    const message = (rawMessage || "").trim();
+    if (!message) return;
+
+    appendMessage(message, "msg-user");
+    const thinkingEl = appendMessage("Thinking…", "msg-system");
+
+    try {
+      const data = await sendToBackend(message);
+      thinkingEl.remove();
+      appendMessage(data.reply, "msg-ai");
+
+      const safeActions = sanitizeActions(data.actions);
+      if (safeActions && window.RL) {
+        window.RL.apply(safeActions);
+        appendMessage("Applied changes to the simulation.", "msg-system");
+      }
+      backendReachable = true;
+      setBackendStatus("");
+    } catch (err) {
+      thinkingEl.remove();
+      backendReachable = false;
+      appendMessage(
+        "I couldn't reach the RegimeLab backend, so I can't analyze this run right now. " +
+          "The simulator itself still works fully — sliders, backtests and charts are unaffected. " +
+          "(" + err.message + ")",
+        "msg-error"
+      );
+      setBackendStatus(
+        "Backend unavailable. Set ENDPOINT in ai.js to your deployed backend URL, or start it locally on port 3000."
+      );
+    }
+  }
+
+  function notifyDataLoaded(count, filename) {
+    appendMessage(`Loaded ${count} real prices from "${filename}". The Copilot will now reason about this dataset instead of synthetic data.`, "msg-system");
+  }
+
+  function wireUI() {
+    el("openCopilotBtn").addEventListener("click", openPanel);
+    el("closeCopilotBtn").addEventListener("click", closePanel);
+    el("copilotOverlay").addEventListener("click", closePanel);
+
+    el("copilotSendBtn").addEventListener("click", () => {
+      const input = el("copilotInput");
+      handleSend(input.value);
+      input.value = "";
+    });
+
+    el("copilotInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const input = el("copilotInput");
+        handleSend(input.value);
+        input.value = "";
+      }
+    });
+
+    document.querySelectorAll(".chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        openPanel();
+        handleSend(chip.getAttribute("data-msg"));
+      });
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", wireUI);
+
+  window.RegimeLabAI = { notifyDataLoaded };
+})();    "reseed": true
   }
 }
 
