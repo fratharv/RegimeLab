@@ -220,6 +220,7 @@ function mulberry32(seed){
     return ((t ^ t>>>14) >>> 0) / 4294967296;
   };
 }
+
 function normalRandom(rng){
   let u=0,v=0;
   while(u===0) u=rng();
@@ -233,9 +234,11 @@ function generateMarket(){
   const prices = new Array(n);
   prices[0] = 100;
   let prevRet = 0;
+
   for(let i=1;i<n;i++){
     const noise = normalRandom(rng) * state.vol * 0.01;
     let drift = 0;
+
     if(state.regime === "trending"){
       drift = state.trend*0.0009 + prevRet*state.persist*0.4;
     } else if(state.regime === "mean_reverting"){
@@ -246,117 +249,260 @@ function generateMarket(){
     } else if(state.regime === "shock"){
       drift = state.trend * 0.0004;
     }
+
     let shock = 0;
+
     if(rng() < state.shockp){
       const dir = rng() < 0.5 ? -1 : 1;
       shock = dir * state.shockm * (0.5 + rng());
     }
+
     const extraVol = state.regime === "high_vol" ? 1.8 : 1;
     const ret = drift + noise*extraVol + shock;
+
     prices[i] = Math.max(1, prices[i-1] * Math.exp(ret));
     prevRet = ret;
   }
+
   return prices;
 }
 
 function movingAverage(values, period){
   const result = new Array(values.length).fill(null);
   let sum = 0;
+
   for(let i=0;i<values.length;i++){
     sum += values[i];
-    if(i >= period) sum -= values[i-period];
-    if(i >= period-1) result[i] = sum/period;
+
+    if(i >= period){
+      sum -= values[i-period];
+    }
+
+    if(i >= period-1){
+      result[i] = sum/period;
+    }
   }
+
   return result;
 }
 
 function backtest(prices){
   const period = Math.round(state.ma);
   const ma = movingAverage(prices, period);
+
   let cash = Number(state.cap);
   let position = 0, entryPrice = 0;
+
   const equity = [];
   const trades = [];
+
   for(let i=0;i<prices.length;i++){
     const price = prices[i];
+
     if(i >= period && ma[i] !== null && ma[i-1] !== null){
+
       if(position === 0){
+
         if(prices[i-1] <= ma[i-1] && price > ma[i]){
           const alloc = cash * (state.ps/100);
+
           position = alloc/price;
           cash -= alloc;
           entryPrice = price;
         }
+
       } else {
+
         const change = (price - entryPrice)/entryPrice * 100;
+
         const stopHit = change <= -state.sl;
         const targetHit = change >= state.tp;
         const crossDown = prices[i-1] >= ma[i-1] && price < ma[i];
+
         if(stopHit || targetHit || crossDown){
           cash += position * price;
+
           trades.push(change);
-          position = 0; entryPrice = 0;
+
+          position = 0;
+          entryPrice = 0;
         }
       }
     }
+
     equity.push(cash + position*price);
   }
+
   if(position > 0){
     const finalPrice = prices[prices.length-1];
+
     cash += position * finalPrice;
+
     trades.push((finalPrice-entryPrice)/entryPrice*100);
+
     equity[equity.length-1] = cash;
   }
+
   return {equity, trades};
 }
 
 function calculateMetrics(equity, trades){
   const initial = Number(state.cap);
   const final = equity[equity.length-1] ?? initial;
+
   const totalReturn = (final-initial)/initial*100;
+
   const returns = [];
+
   for(let i=1;i<equity.length;i++){
-    if(equity[i-1] !== 0) returns.push((equity[i]-equity[i-1])/equity[i-1]);
+    if(equity[i-1] !== 0){
+      returns.push((equity[i]-equity[i-1])/equity[i-1]);
+    }
   }
-  const mean = returns.length ? returns.reduce((a,b)=>a+b,0)/returns.length : 0;
-  const variance = returns.length ? returns.reduce((s,v)=>s+(v-mean)**2,0)/returns.length : 0;
+
+  const mean = returns.length
+    ? returns.reduce((a,b)=>a+b,0)/returns.length
+    : 0;
+
+  const variance = returns.length
+    ? returns.reduce((s,v)=>s+(v-mean)**2,0)/returns.length
+    : 0;
+
   const sd = Math.sqrt(variance);
-  const sharpe = sd > 0 ? (mean/sd)*Math.sqrt(252) : 0;
-  let peak = equity[0] || initial, maxDD = 0;
-  for(const v of equity){ peak = Math.max(peak,v); maxDD = Math.min(maxDD, (v-peak)/peak*100); }
+
+  const sharpe = sd > 0
+    ? (mean/sd)*Math.sqrt(252)
+    : 0;
+
+  let peak = equity[0] || initial;
+  let maxDD = 0;
+
+  for(const v of equity){
+    peak = Math.max(peak,v);
+    maxDD = Math.min(maxDD, (v-peak)/peak*100);
+  }
+
   const wins = trades.filter(t=>t>0).length;
-  const winRate = trades.length ? wins/trades.length*100 : 0;
-  const avgTrade = trades.length ? trades.reduce((a,b)=>a+b,0)/trades.length : 0;
-  const gains = trades.filter(t=>t>0).reduce((a,b)=>a+b,0);
-  const losses = Math.abs(trades.filter(t=>t<0).reduce((a,b)=>a+b,0));
-  const profitFactor = losses > 0 ? gains/losses : (gains > 0 ? Infinity : 0);
-  return {totalReturn, sharpe, maxDrawdown:maxDD, winRate, finalEquity:final, numTrades:trades.length, avgTrade, profitFactor};
+
+  const winRate = trades.length
+    ? wins/trades.length*100
+    : 0;
+
+  const avgTrade = trades.length
+    ? trades.reduce((a,b)=>a+b,0)/trades.length
+    : 0;
+
+  const gains = trades
+    .filter(t=>t>0)
+    .reduce((a,b)=>a+b,0);
+
+  const losses = Math.abs(
+    trades
+      .filter(t=>t<0)
+      .reduce((a,b)=>a+b,0)
+  );
+
+  const profitFactor = losses > 0
+    ? gains/losses
+    : (gains > 0 ? Infinity : 0);
+
+  return {
+    totalReturn,
+    sharpe,
+    maxDrawdown:maxDD,
+    winRate,
+    finalEquity:final,
+    numTrades:trades.length,
+    avgTrade,
+    profitFactor
+  };
 }
 
 function destroyCharts(){
-  if(priceChart){ priceChart.destroy(); priceChart=null; }
-  if(equityChart){ equityChart.destroy(); equityChart=null; }
+  if(priceChart){
+    priceChart.destroy();
+    priceChart=null;
+  }
+
+  if(equityChart){
+    equityChart.destroy();
+    equityChart=null;
+  }
 }
 
 function createCharts(prices, equity){
   destroyCharts();
+
   const labels = prices.map((_,i)=>i+1);
+
   const baseOptions = {
-    responsive:true, maintainAspectRatio:false, animation:{duration:150},
-    plugins:{legend:{display:false}},
+    responsive:true,
+    maintainAspectRatio:false,
+    animation:{duration:150},
+
+    plugins:{
+      legend:{display:false}
+    },
+
     scales:{
-      x:{ticks:{maxTicksLimit:8,color:"#99948a"},grid:{display:false}},
-      y:{ticks:{color:"#99948a"},grid:{color:"#e7e3db"}}
+      x:{
+        ticks:{
+          maxTicksLimit:8,
+          color:"#99948a"
+        },
+        grid:{
+          display:false
+        }
+      },
+
+      y:{
+        ticks:{
+          color:"#99948a"
+        },
+        grid:{
+          color:"#e7e3db"
+        }
+      }
     }
   };
+
   priceChart = new Chart($("priceChart").getContext("2d"), {
     type:"line",
-    data:{labels, datasets:[{data:prices, borderColor:"#26251f", backgroundColor:"rgba(139,118,82,0.06)", borderWidth:1.5, pointRadius:0, tension:0.08, fill:true}]},
+
+    data:{
+      labels,
+
+      datasets:[{
+        data:prices,
+        borderColor:"#26251f",
+        backgroundColor:"rgba(139,118,82,0.06)",
+        borderWidth:1.5,
+        pointRadius:0,
+        tension:0.08,
+        fill:true
+      }]
+    },
+
     options:baseOptions
   });
+
   equityChart = new Chart($("equityChart").getContext("2d"), {
     type:"line",
-    data:{labels, datasets:[{data:equity, borderColor:"#8b7652", backgroundColor:"rgba(139,118,82,0.07)", borderWidth:1.5, pointRadius:0, tension:0.08, fill:true}]},
+
+    data:{
+      labels,
+
+      datasets:[{
+        data:equity,
+        borderColor:"#8b7652",
+        backgroundColor:"rgba(139,118,82,0.07)",
+        borderWidth:1.5,
+        pointRadius:0,
+        tension:0.08,
+        fill:true
+      }]
+    },
+
     options:baseOptions
   });
 }
@@ -374,64 +520,190 @@ function updateOutputs(){
   $("sl-val").textContent = Number(state.sl).toFixed(1)+"%";
   $("tp-val").textContent = Number(state.tp).toFixed(1)+"%";
   $("ps-val").textContent = Number(state.ps).toFixed(0)+"%";
-  $("regimeName").textContent = REGIME_LABEL[state.regime] || state.regime;
+
+  $("regimeName").textContent =
+    REGIME_LABEL[state.regime] || state.regime;
 }
 
 function updateMetrics(m){
   $("totalReturn").textContent = pct(m.totalReturn);
-  $("sharpe").textContent = Number.isFinite(m.sharpe) ? m.sharpe.toFixed(2) : "0.00";
+
+  $("sharpe").textContent =
+    Number.isFinite(m.sharpe)
+      ? m.sharpe.toFixed(2)
+      : "0.00";
+
   $("maxDrawdown").textContent = pct(m.maxDrawdown);
   $("winRate").textContent = pct(m.winRate);
   $("finalEquity").textContent = money(m.finalEquity);
   $("numTrades").textContent = m.numTrades;
   $("avgTrade").textContent = pct(m.avgTrade);
-  $("profitFactor").textContent = Number.isFinite(m.profitFactor) ? m.profitFactor.toFixed(2) : "∞";
+
+  $("profitFactor").textContent =
+    Number.isFinite(m.profitFactor)
+      ? m.profitFactor.toFixed(2)
+      : "∞";
 }
 
+
+/* =========================================================
+   UPDATED SIMULATION LOGIC
+   ========================================================= */
+
 function runSimulation(){
-  state.realData = false;
-  state.seed = Math.floor(Math.random()*4294967295);
-  const prices = generateMarket();
+
+  let prices;
+
+  /*
+   * If a CSV is loaded, keep using that exact price series.
+   * Strategy changes will therefore re-run the strategy
+   * on the uploaded CSV instead of generating a new market.
+   */
+
+  if(
+    state.realData &&
+    Array.isArray(state.prices) &&
+    state.prices.length >= 100
+  ){
+
+    prices = state.prices;
+
+  } else {
+
+    /*
+     * No CSV is active, so generate a synthetic market.
+     */
+
+    state.seed = Math.floor(Math.random()*4294967295);
+
+    prices = generateMarket();
+
+    state.prices = prices;
+  }
+
+  /*
+   * Run the current strategy on the active market.
+   */
+
   const result = backtest(prices);
-  state.prices = prices; state.equity = result.equity; state.trades = result.trades;
-  const metrics = calculateMetrics(result.equity, result.trades);
+
+  state.equity = result.equity;
+  state.trades = result.trades;
+
+  const metrics = calculateMetrics(
+    result.equity,
+    result.trades
+  );
+
   updateOutputs();
   updateMetrics(metrics);
-  $("currentPrice").textContent = money(prices[prices.length-1]);
-  $("observationCount").textContent = prices.length.toLocaleString("en-IN");
-  $("seedDisplay").textContent = state.seed;
+
+  $("currentPrice").textContent =
+    money(prices[prices.length-1]);
+
+  $("observationCount").textContent =
+    prices.length.toLocaleString("en-IN");
+
+  /*
+   * Display whether the active market is
+   * synthetic or uploaded real data.
+   */
+
+  if(state.realData){
+
+    $("seedDisplay").textContent = "REAL";
+    $("regimeName").textContent = "Observed Data";
+
+  } else {
+
+    $("seedDisplay").textContent = state.seed;
+
+    $("regimeName").textContent =
+      REGIME_LABEL[state.regime] || state.regime;
+  }
+
   createCharts(prices, result.equity);
 }
 
 function readControls(){
   for(const id of SLIDER_IDS){
     const el = $(id);
-    if(el) state[id] = Number(el.value);
+
+    if(el){
+      state[id] = Number(el.value);
+    }
   }
+
   state.regime = $("regime").value;
 }
 
 function writeControls(){
   $("regime").value = state.regime;
+
   for(const id of SLIDER_IDS){
     const el = $(id);
-    if(el) el.value = state[id];
+
+    if(el){
+      el.value = state[id];
+    }
   }
+
   updateOutputs();
 }
 
 function setupControls(){
-  $("regime").addEventListener("change", () => { readControls(); runSimulation(); });
+
+  $("regime").addEventListener("change", () => {
+    readControls();
+    runSimulation();
+  });
+
   for(const id of SLIDER_IDS){
+
     const el = $(id);
+
     el.addEventListener("input", () => {
       readControls();
-      runSimulation(); // live update while dragging
+
+      /*
+       * This now preserves CSV mode automatically.
+       */
+      runSimulation();
     });
   }
-  $("generateBtn").addEventListener("click", () => { readControls(); runSimulation(); });
+
+
+  /* =========================================================
+     UPDATED GENERATE MARKET BUTTON
+     ========================================================= */
+
+  $("generateBtn").addEventListener("click", () => {
+
+    readControls();
+
+    /*
+     * Explicitly leave CSV mode and generate
+     * a fresh synthetic market.
+     */
+
+    state.realData = false;
+    state.prices = [];
+
+    runSimulation();
+  });
+
+
   $("resetBtn").addEventListener("click", () => {
+
     Object.assign(state, DEFAULTS);
+
+    /*
+     * IMPORTANT:
+     * Resetting parameters does NOT remove the uploaded CSV.
+     * If CSV mode is active, the reset strategy will still
+     * be tested on the same CSV.
+     */
+
     writeControls();
     runSimulation();
   });
