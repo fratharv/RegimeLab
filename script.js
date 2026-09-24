@@ -1,12 +1,46 @@
 (() => {
     "use strict";
 
-    const REGIMES = [
-        "trending",
-        "mean_reverting",
-        "high_vol",
-        "shock"
-    ];
+    const COPILOT_ENDPOINT =
+        "https://regimelab.onrender.com/api/copilot";
+
+    const HEALTH_ENDPOINT =
+        "https://regimelab.onrender.com/api/health";
+
+
+    /* =========================================================
+       DEFAULTS
+       ========================================================= */
+
+    const DEFAULTS = {
+        regime: "trending",
+
+        trend: 0.30,
+        meanrev: 0.20,
+        vol: 0.20,
+        shockp: 0.01,
+        shockm: 0.05,
+        persist: 0.85,
+
+        len: 1000,
+        cap: 100000,
+
+        ma: 20,
+        sl: 3,
+        tp: 6,
+        ps: 25
+    };
+
+
+    const state = {
+        ...DEFAULTS,
+        seed: null,
+        prices: [],
+        equity: [],
+        trades: [],
+        realData: false
+    };
+
 
     const REGIME_LABEL = {
         trending: "Trending",
@@ -15,7 +49,870 @@
         shock: "Shock"
     };
 
-    const PARAMS = [
+
+    let priceChart = null;
+    let equityChart = null;
+
+
+    /* =========================================================
+       DOM HELPERS
+       ========================================================= */
+
+    const $ = id => document.getElementById(id);
+
+
+    function money(value) {
+        return "₹" + Number(value).toLocaleString("en-IN", {
+            maximumFractionDigits: 2
+        });
+    }
+
+
+    function percent(value) {
+        return Number(value).toFixed(2) + "%";
+    }
+
+
+    function clamp(value, min, max) {
+        return Math.min(
+            Math.max(Number(value), min),
+            max
+        );
+    }
+
+
+    /* =========================================================
+       RANDOM NUMBER GENERATOR
+       ========================================================= */
+
+    function mulberry32(seed) {
+        return function () {
+            let t = seed += 0x6D2B79F5;
+
+            t = Math.imul(
+                t ^ t >>> 15,
+                t | 1
+            );
+
+            t ^= t + Math.imul(
+                t ^ t >>> 7,
+                t | 61
+            );
+
+            return (
+                (t ^ t >>> 14) >>> 0
+            ) / 4294967296;
+        };
+    }
+
+
+    function normalRandom(random) {
+        let u = 0;
+        let v = 0;
+
+        while (u === 0) {
+            u = random();
+        }
+
+        while (v === 0) {
+            v = random();
+        }
+
+        return Math.sqrt(
+            -2 * Math.log(u)
+        ) * Math.cos(
+            2 * Math.PI * v
+        );
+    }
+
+
+    /* =========================================================
+       MARKET GENERATION
+       ========================================================= */
+
+    function generateMarket() {
+
+        const n = Math.round(state.len);
+
+        const random = mulberry32(
+            state.seed
+        );
+
+        const prices = new Array(n);
+
+        prices[0] = 100;
+
+        let previousReturn = 0;
+
+        for (let i = 1; i < n; i++) {
+
+            const noise =
+                normalRandom(random) *
+                state.vol *
+                0.008;
+
+            let drift = 0;
+
+            if (state.regime === "trending") {
+
+                drift =
+                    state.trend *
+                    0.0008;
+
+                drift +=
+                    previousReturn *
+                    state.persist *
+                    0.35;
+            }
+
+
+            else if (
+                state.regime === "mean_reverting"
+            ) {
+
+                const deviation =
+                    prices[i - 1] - 100;
+
+                drift =
+                    -state.meanrev *
+                    deviation *
+                    0.00008;
+            }
+
+
+            else if (
+                state.regime === "high_vol"
+            ) {
+
+                drift =
+                    state.trend *
+                    0.0003;
+            }
+
+
+            else if (
+                state.regime === "shock"
+            ) {
+
+                drift =
+                    state.trend *
+                    0.0004;
+            }
+
+
+            let shock = 0;
+
+            if (
+                random() <
+                state.shockp
+            ) {
+
+                const direction =
+                    random() < 0.5
+                        ? -1
+                        : 1;
+
+                shock =
+                    direction *
+                    state.shockm *
+                    (0.5 + random());
+            }
+
+
+            const logReturn =
+                drift +
+                noise +
+                shock;
+
+
+            prices[i] =
+                Math.max(
+                    1,
+                    prices[i - 1] *
+                    Math.exp(logReturn)
+                );
+
+
+            previousReturn =
+                logReturn;
+        }
+
+
+        return prices;
+    }
+
+
+    /* =========================================================
+       MOVING AVERAGE
+       ========================================================= */
+
+    function movingAverage(
+        values,
+        period
+    ) {
+
+        const result =
+            new Array(values.length).fill(null);
+
+        let sum = 0;
+
+        for (
+            let i = 0;
+            i < values.length;
+            i++
+        ) {
+
+            sum += values[i];
+
+            if (i >= period) {
+                sum -= values[i - period];
+            }
+
+            if (i >= period - 1) {
+                result[i] =
+                    sum / period;
+            }
+        }
+
+        return result;
+    }
+
+
+    /* =========================================================
+       BACKTEST
+       ========================================================= */
+
+    function backtest(prices) {
+
+        const ma =
+            movingAverage(
+                prices,
+                Math.round(state.ma)
+            );
+
+
+        const capital =
+            Number(state.cap);
+
+
+        let cash = capital;
+        let position = 0;
+        let entryPrice = 0;
+
+        const equity = [];
+        const trades = [];
+
+
+        for (
+            let i = 0;
+            i < prices.length;
+            i++
+        ) {
+
+            const price =
+                prices[i];
+
+
+            if (
+                i >= state.ma &&
+                ma[i] !== null
+            ) {
+
+                if (position === 0) {
+
+                    if (
+                        price > ma[i]
+                    ) {
+
+                        const allocation =
+                            cash *
+                            (state.ps / 100);
+
+                        position =
+                            allocation / price;
+
+                        cash -= allocation;
+
+                        entryPrice =
+                            price;
+                    }
+                }
+
+
+                else {
+
+                    const change =
+                        (
+                            price -
+                            entryPrice
+                        ) /
+                        entryPrice *
+                        100;
+
+
+                    const stopHit =
+                        change <= -state.sl;
+
+                    const targetHit =
+                        change >= state.tp;
+
+                    const belowMA =
+                        price < ma[i];
+
+
+                    if (
+                        stopHit ||
+                        targetHit ||
+                        belowMA
+                    ) {
+
+                        cash +=
+                            position *
+                            price;
+
+                        const tradeReturn =
+                            (
+                                price -
+                                entryPrice
+                            ) /
+                            entryPrice *
+                            100;
+
+                        trades.push(
+                            tradeReturn
+                        );
+
+                        position = 0;
+                        entryPrice = 0;
+                    }
+                }
+            }
+
+
+            const currentEquity =
+                cash +
+                position * price;
+
+            equity.push(
+                currentEquity
+            );
+        }
+
+
+        if (position > 0) {
+
+            const finalPrice =
+                prices[prices.length - 1];
+
+            cash +=
+                position *
+                finalPrice;
+
+            trades.push(
+                (
+                    finalPrice -
+                    entryPrice
+                ) /
+                entryPrice *
+                100
+            );
+
+            equity[
+                equity.length - 1
+            ] = cash;
+        }
+
+
+        return {
+            equity,
+            trades
+        };
+    }
+
+
+    /* =========================================================
+       METRICS
+       ========================================================= */
+
+    function calculateMetrics(
+        prices,
+        equity,
+        trades
+    ) {
+
+        const initial =
+            equity[0] ||
+            state.cap;
+
+        const final =
+            equity[equity.length - 1] ||
+            state.cap;
+
+
+        const totalReturn =
+            (
+                final -
+                initial
+            ) /
+            initial *
+            100;
+
+
+        const returns = [];
+
+        for (
+            let i = 1;
+            i < equity.length;
+            i++
+        ) {
+
+            if (equity[i - 1] !== 0) {
+
+                returns.push(
+                    (
+                        equity[i] -
+                        equity[i - 1]
+                    ) /
+                    equity[i - 1]
+                );
+            }
+        }
+
+
+        const mean =
+            returns.length
+                ? returns.reduce(
+                    (a, b) => a + b,
+                    0
+                ) / returns.length
+                : 0;
+
+
+        const variance =
+            returns.length
+                ? returns.reduce(
+                    (sum, value) =>
+                        sum +
+                        Math.pow(
+                            value - mean,
+                            2
+                        ),
+                    0
+                ) /
+                returns.length
+                : 0;
+
+
+        const standardDeviation =
+            Math.sqrt(variance);
+
+
+        const sharpe =
+            standardDeviation > 0
+                ? (
+                    mean /
+                    standardDeviation
+                ) *
+                Math.sqrt(252)
+                : 0;
+
+
+        let peak =
+            equity[0] || state.cap;
+
+        let maxDrawdown = 0;
+
+
+        for (
+            const value of equity
+        ) {
+
+            peak =
+                Math.max(
+                    peak,
+                    value
+                );
+
+            const drawdown =
+                (
+                    value -
+                    peak
+                ) /
+                peak *
+                100;
+
+            maxDrawdown =
+                Math.min(
+                    maxDrawdown,
+                    drawdown
+                );
+        }
+
+
+        const wins =
+            trades.filter(
+                value => value > 0
+            ).length;
+
+
+        const winRate =
+            trades.length
+                ? wins /
+                  trades.length *
+                  100
+                : 0;
+
+
+        const averageTrade =
+            trades.length
+                ? trades.reduce(
+                    (a, b) => a + b,
+                    0
+                ) /
+                trades.length
+                : 0;
+
+
+        const gains =
+            trades
+                .filter(value => value > 0)
+                .reduce(
+                    (a, b) => a + b,
+                    0
+                );
+
+
+        const losses =
+            Math.abs(
+                trades
+                    .filter(value => value < 0)
+                    .reduce(
+                        (a, b) => a + b,
+                        0
+                    )
+            );
+
+
+        const profitFactor =
+            losses > 0
+                ? gains / losses
+                : gains > 0
+                    ? Infinity
+                    : 0;
+
+
+        return {
+            totalReturn,
+            sharpe,
+            maxDrawdown,
+            winRate,
+            finalEquity: final,
+            numTrades: trades.length,
+            averageTrade,
+            profitFactor
+        };
+    }
+
+
+    /* =========================================================
+       CHARTS
+       ========================================================= */
+
+    function destroyCharts() {
+
+        if (priceChart) {
+            priceChart.destroy();
+            priceChart = null;
+        }
+
+        if (equityChart) {
+            equityChart.destroy();
+            equityChart = null;
+        }
+    }
+
+
+    function createCharts(
+        prices,
+        equity
+    ) {
+
+        destroyCharts();
+
+
+        const labels =
+            prices.map(
+                (_, index) => index + 1
+            );
+
+
+        const priceContext =
+            $("priceChart").getContext("2d");
+
+
+        const equityContext =
+            $("equityChart").getContext("2d");
+
+
+        const baseOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+
+            animation: {
+                duration: 250
+            },
+
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+
+            scales: {
+                x: {
+                    ticks: {
+                        maxTicksLimit: 8,
+                        color: "#99948a"
+                    },
+
+                    grid: {
+                        display: false
+                    }
+                },
+
+                y: {
+                    ticks: {
+                        color: "#99948a"
+                    },
+
+                    grid: {
+                        color: "#e7e3db"
+                    }
+                }
+            }
+        };
+
+
+        priceChart =
+            new Chart(
+                priceContext,
+                {
+                    type: "line",
+
+                    data: {
+                        labels,
+
+                        datasets: [{
+                            data: prices,
+
+                            borderColor: "#26251f",
+                            backgroundColor:
+                                "rgba(139,118,82,0.06)",
+
+                            borderWidth: 1.5,
+
+                            pointRadius: 0,
+
+                            tension: 0.08,
+
+                            fill: true
+                        }]
+                    },
+
+                    options: baseOptions
+                }
+            );
+
+
+        equityChart =
+            new Chart(
+                equityContext,
+                {
+                    type: "line",
+
+                    data: {
+                        labels,
+
+                        datasets: [{
+                            data: equity,
+
+                            borderColor: "#8b7652",
+                            backgroundColor:
+                                "rgba(139,118,82,0.07)",
+
+                            borderWidth: 1.5,
+
+                            pointRadius: 0,
+
+                            tension: 0.08,
+
+                            fill: true
+                        }]
+                    },
+
+                    options: baseOptions
+                }
+            );
+    }
+
+
+    /* =========================================================
+       UI
+       ========================================================= */
+
+    function updateOutputs() {
+
+        $("trendValue").textContent =
+            Number(state.trend).toFixed(2);
+
+        $("meanrevValue").textContent =
+            Number(state.meanrev).toFixed(2);
+
+        $("volValue").textContent =
+            Number(state.vol).toFixed(2);
+
+        $("shockpValue").textContent =
+            Number(state.shockp).toFixed(3);
+
+        $("shockmValue").textContent =
+            Number(state.shockm).toFixed(3);
+
+        $("persistValue").textContent =
+            Number(state.persist).toFixed(2);
+
+        $("lenValue").textContent =
+            Number(state.len).toLocaleString("en-IN");
+
+        $("capValue").textContent =
+            money(state.cap);
+
+        $("maValue").textContent =
+            Math.round(state.ma);
+
+        $("slValue").textContent =
+            Number(state.sl).toFixed(1) + "%";
+
+        $("tpValue").textContent =
+            Number(state.tp).toFixed(1) + "%";
+
+        $("psValue").textContent =
+            Number(state.ps).toFixed(0) + "%";
+
+
+        $("regimeName").textContent =
+            REGIME_LABEL[state.regime] ||
+            state.regime;
+    }
+
+
+    function updateMetrics(metrics) {
+
+        $("totalReturn").textContent =
+            percent(metrics.totalReturn);
+
+        $("sharpe").textContent =
+            Number.isFinite(metrics.sharpe)
+                ? metrics.sharpe.toFixed(2)
+                : "0.00";
+
+        $("maxDrawdown").textContent =
+            percent(metrics.maxDrawdown);
+
+        $("winRate").textContent =
+            percent(metrics.winRate);
+
+        $("finalEquity").textContent =
+            money(metrics.finalEquity);
+
+        $("numTrades").textContent =
+            metrics.numTrades;
+
+        $("avgTrade").textContent =
+            percent(metrics.averageTrade);
+
+        $("profitFactor").textContent =
+            Number.isFinite(metrics.profitFactor)
+                ? metrics.profitFactor.toFixed(2)
+                : "∞";
+    }
+
+
+    /* =========================================================
+       SIMULATION
+       ========================================================= */
+
+    function runSimulation() {
+
+        state.realData = false;
+
+        state.seed =
+            Math.floor(
+                Math.random() *
+                4294967295
+            );
+
+
+        const prices =
+            generateMarket();
+
+
+        const result =
+            backtest(prices);
+
+
+        state.prices =
+            prices;
+
+        state.equity =
+            result.equity;
+
+        state.trades =
+            result.trades;
+
+
+        const metrics =
+            calculateMetrics(
+                prices,
+                result.equity,
+                result.trades
+            );
+
+
+        updateOutputs();
+
+        updateMetrics(metrics);
+
+
+        $("currentPrice").textContent =
+            money(
+                prices[
+                    prices.length - 1
+                ]
+            );
+
+
+        $("observationCount").textContent =
+            prices.length.toLocaleString(
+                "en-IN"
+            );
+
+
+        $("seedDisplay").textContent =
+            state.seed;
+
+
+        createCharts(
+            prices,
+            result.equity
+        );
+    }
+
+
+    /* =========================================================
+       CONTROL WIRING
+       ========================================================= */
+
+    const sliderIds = [
         "trend",
         "meanrev",
         "vol",
@@ -30,39 +927,840 @@
         "ps"
     ];
 
-    const defaults = {
-        regime: "trending",
-        trend: 0.30,
-        meanrev: 0.20,
-        vol: 0.20,
-        shockp: 0.01,
-        shockm: 0.05,
-        persist: 0.85,
-        len: 1000,
-        cap: 100000,
-        ma: 20,
-        sl: 3,
-        tp: 6,
-        ps: 25
+
+    function readControls() {
+
+        for (
+            const id of sliderIds
+        ) {
+
+            const element = $(id);
+
+            if (element) {
+                state[id] =
+                    Number(element.value);
+            }
+        }
+
+        state.regime =
+            $("regime").value;
+    }
+
+
+    function writeControls() {
+
+        $("regime").value =
+            state.regime;
+
+
+        for (
+            const id of sliderIds
+        ) {
+
+            const element = $(id);
+
+            if (element) {
+                element.value =
+                    state[id];
+            }
+        }
+
+        updateOutputs();
+    }
+
+
+    function setupControls() {
+
+        $("regime")
+            .addEventListener(
+                "change",
+                () => {
+
+                    readControls();
+                    runSimulation();
+                }
+            );
+
+
+        for (
+            const id of sliderIds
+        ) {
+
+            const element = $(id);
+
+            element.addEventListener(
+                "input",
+                () => {
+
+                    readControls();
+
+                    /*
+                     * This is deliberately on INPUT,
+                     * not CHANGE.
+                     *
+                     * Therefore the graph changes
+                     * while the slider is being moved.
+                     */
+
+                    runSimulation();
+                }
+            );
+        }
+
+
+        $("generateBtn")
+            .addEventListener(
+                "click",
+                () => {
+
+                    readControls();
+                    runSimulation();
+                }
+            );
+
+
+        $("resetBtn")
+            .addEventListener(
+                "click",
+                () => {
+
+                    Object.assign(
+                        state,
+                        DEFAULTS
+                    );
+
+                    writeControls();
+                    runSimulation();
+                }
+            );
+    }
+
+
+    /* =========================================================
+       CSV
+       ========================================================= */
+
+    async function loadCSV(file) {
+
+        const text =
+            await file.text();
+
+
+        const rows =
+            text
+                .trim()
+                .split(/\r?\n/)
+                .map(row =>
+                    row
+                        .split(/[,;\t]/)
+                        .map(cell =>
+                            cell
+                                .trim()
+                                .replace(
+                                    /^"|"$/g,
+                                    ""
+                                )
+                        )
+                );
+
+
+        if (rows.length < 2) {
+            throw new Error(
+                "The CSV does not contain enough rows."
+            );
+        }
+
+
+        const header =
+            rows[0].map(
+                value =>
+                    value.toLowerCase()
+            );
+
+
+        let priceIndex =
+            header.findIndex(
+                value =>
+                    [
+                        "close",
+                        "adj close",
+                        "adj_close",
+                        "close/last",
+                        "price"
+                    ].includes(value)
+            );
+
+
+        const firstRowLooksNumeric =
+            rows[0].some(
+                value =>
+                    Number.isFinite(
+                        Number(
+                            value.replace(
+                                /[$₹,]/g,
+                                ""
+                            )
+                        )
+                    )
+            );
+
+
+        const body =
+            firstRowLooksNumeric
+                ? rows
+                : rows.slice(1);
+
+
+        if (priceIndex < 0) {
+            priceIndex =
+                rows[0].length - 1;
+        }
+
+
+        const prices =
+            body
+                .map(
+                    row =>
+                        Number(
+                            String(
+                                row[priceIndex]
+                            )
+                                .replace(
+                                    /[$₹,]/g,
+                                    ""
+                                )
+                        )
+                )
+                .filter(
+                    value =>
+                        Number.isFinite(value) &&
+                        value > 0
+                );
+
+
+        if (prices.length < 100) {
+            throw new Error(
+                "At least 100 valid prices are required."
+            );
+        }
+
+
+        state.realData = true;
+        state.prices =
+            prices.slice(-5000);
+
+
+        const result =
+            backtest(
+                state.prices
+            );
+
+
+        state.equity =
+            result.equity;
+
+        state.trades =
+            result.trades;
+
+
+        const metrics =
+            calculateMetrics(
+                state.prices,
+                state.equity,
+                state.trades
+            );
+
+
+        updateMetrics(metrics);
+
+
+        $("currentPrice").textContent =
+            money(
+                state.prices[
+                    state.prices.length - 1
+                ]
+            );
+
+
+        $("observationCount").textContent =
+            state.prices.length.toLocaleString(
+                "en-IN"
+            );
+
+
+        $("seedDisplay").textContent =
+            "REAL";
+
+
+        $("regimeName").textContent =
+            "Observed Data";
+
+
+        createCharts(
+            state.prices,
+            state.equity
+        );
+
+
+        $("uploadStatus").textContent =
+            `Loaded ${state.prices.length.toLocaleString("en-IN")} prices from ${file.name}.`;
+
+
+        if (
+            window.RegimeLabAI &&
+            typeof window.RegimeLabAI.notifyDataLoaded ===
+                "function"
+        ) {
+
+            window.RegimeLabAI.notifyDataLoaded(
+                state.prices.length,
+                file.name
+            );
+        }
+    }
+
+
+    $("csvInput")
+        .addEventListener(
+            "change",
+            async event => {
+
+                const file =
+                    event.target.files[0];
+
+                if (!file) {
+                    return;
+                }
+
+                try {
+
+                    await loadCSV(file);
+
+                } catch (error) {
+
+                    $("uploadStatus").textContent =
+                        error.message;
+                }
+
+                event.target.value = "";
+            }
+        );
+
+
+    /* =========================================================
+       PUBLIC API FOR COPILOT
+       ========================================================= */
+
+    function snapshot() {
+
+        return {
+            regime: state.regime,
+
+            trend: state.trend,
+            meanrev: state.meanrev,
+            vol: state.vol,
+            shockp: state.shockp,
+            shockm: state.shockm,
+            persist: state.persist,
+
+            len: state.len,
+            cap: state.cap,
+
+            ma: state.ma,
+            sl: state.sl,
+            tp: state.tp,
+            ps: state.ps,
+
+            seed: state.seed,
+            observations: state.prices.length,
+            realData: state.realData
+        };
+    }
+
+
+    function applyActions(actions) {
+
+        if (!actions ||
+            typeof actions !== "object"
+        ) {
+            return;
+        }
+
+
+        const allowed =
+            [
+                "trend",
+                "meanrev",
+                "vol",
+                "shockp",
+                "shockm",
+                "persist",
+                "len",
+                "cap",
+                "ma",
+                "sl",
+                "tp",
+                "ps"
+            ];
+
+
+        if (
+            typeof actions.regime === "string" &&
+            [
+                "trending",
+                "mean_reverting",
+                "high_vol",
+                "shock"
+            ].includes(
+                actions.regime
+            )
+        ) {
+
+            state.regime =
+                actions.regime;
+        }
+
+
+        for (
+            const key of allowed
+        ) {
+
+            if (
+                actions[key] === undefined ||
+                actions[key] === null
+            ) {
+                continue;
+            }
+
+
+            const element =
+                $(key);
+
+
+            if (!element) {
+                continue;
+            }
+
+
+            const value =
+                Number(
+                    actions[key]
+                );
+
+
+            if (
+                Number.isFinite(value)
+            ) {
+
+                state[key] =
+                    clamp(
+                        value,
+                        Number(element.min),
+                        Number(element.max)
+                    );
+            }
+        }
+
+
+        writeControls();
+        runSimulation();
+    }
+
+
+    window.RL = {
+        snapshot,
+        apply: applyActions,
+        loadPrices: prices => {
+            state.prices =
+                prices.slice(-5000);
+
+            state.realData = true;
+
+            const result =
+                backtest(
+                    state.prices
+                );
+
+            state.equity =
+                result.equity;
+
+            state.trades =
+                result.trades;
+
+            const metrics =
+                calculateMetrics(
+                    state.prices,
+                    state.equity,
+                    state.trades
+                );
+
+            updateMetrics(metrics);
+
+            $("currentPrice").textContent =
+                money(
+                    state.prices[
+                        state.prices.length - 1
+                    ]
+                );
+
+            $("observationCount").textContent =
+                state.prices.length.toLocaleString(
+                    "en-IN"
+                );
+
+            $("seedDisplay").textContent =
+                "REAL";
+
+            createCharts(
+                state.prices,
+                state.equity
+            );
+        }
     };
 
-    let seed = Math.floor(Math.random() * 4294967295);
 
-    let state = {
-        ...defaults,
-        prices: [],
-        equity: [],
-        metrics: null
+    /* =========================================================
+       AI COPILOT
+       ========================================================= */
+
+    const panel =
+        $("copilotPanel");
+
+    const overlay =
+        $("copilotOverlay");
+
+    const input =
+        $("copilotInput");
+
+    const log =
+        $("copilotLog");
+
+    const backendStatus =
+        $("copilotBackendStatus");
+
+
+    function openCopilot() {
+
+        panel.classList.add("open");
+        overlay.classList.add("open");
+
+        setTimeout(
+            () => input.focus(),
+            250
+        );
+    }
+
+
+    function closeCopilot() {
+
+        panel.classList.remove("open");
+        overlay.classList.remove("open");
+    }
+
+
+    $("openCopilotBtn")
+        .addEventListener(
+            "click",
+            openCopilot
+        );
+
+
+    $("closeCopilotBtn")
+        .addEventListener(
+            "click",
+            closeCopilot
+        );
+
+
+    overlay
+        .addEventListener(
+            "click",
+            closeCopilot
+        );
+
+
+    function escapeHTML(value) {
+
+        return String(value)
+            .replace(
+                /&/g,
+                "&amp;"
+            )
+            .replace(
+                /</g,
+                "&lt;"
+            )
+            .replace(
+                />/g,
+                "&gt;"
+            )
+            .replace(
+                /"/g,
+                "&quot;"
+            )
+            .replace(
+                /'/g,
+                "&#039;"
+            );
+    }
+
+
+    function addMessage(
+        type,
+        message
+    ) {
+
+        const wrapper =
+            document.createElement(
+                "div"
+            );
+
+
+        wrapper.className =
+            type === "user"
+                ? "user-message"
+                : "ai-message";
+
+
+        wrapper.innerHTML = `
+            <div class="message-label">
+                ${type === "user"
+                    ? "YOU"
+                    : "COPILOT"}
+            </div>
+
+            <p>${escapeHTML(message)}</p>
+        `;
+
+
+        log.appendChild(wrapper);
+
+        log.scrollTop =
+            log.scrollHeight;
+
+
+        return wrapper;
+    }
+
+
+    async function checkBackend() {
+
+        try {
+
+            const response =
+                await fetch(
+                    HEALTH_ENDPOINT
+                );
+
+
+            if (!response.ok) {
+                throw new Error();
+            }
+
+
+            backendStatus.textContent =
+                "Backend connected · AI Copilot ready";
+
+        } catch {
+
+            backendStatus.textContent =
+                "Backend unavailable · simulator remains fully functional";
+        }
+    }
+
+
+    async function sendToBackend(
+        message
+    ) {
+
+        const response =
+            await fetch(
+                COPILOT_ENDPOINT,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        message,
+                        state:
+                            snapshot()
+                    })
+                }
+            );
+
+
+        if (!response.ok) {
+
+            let error =
+                "AI request failed.";
+
+
+            try {
+
+                const data =
+                    await response.json();
+
+                if (data.error) {
+                    error =
+                        data.error;
+                }
+
+            } catch {}
+
+
+            throw new Error(error);
+        }
+
+
+        return response.json();
+    }
+
+
+    async function sendCopilot() {
+
+        const message =
+            input.value.trim();
+
+
+        if (!message) {
+            return;
+        }
+
+
+        input.value = "";
+
+        addMessage(
+            "user",
+            message
+        );
+
+
+        const thinking =
+            addMessage(
+                "ai",
+                "Analysing the experiment…"
+            );
+
+
+        try {
+
+            const data =
+                await sendToBackend(
+                    message
+                );
+
+
+            thinking.remove();
+
+
+            if (
+                data.actions &&
+                typeof data.actions ===
+                    "object"
+            ) {
+
+                applyActions(
+                    data.actions
+                );
+            }
+
+
+            addMessage(
+                "ai",
+                data.reply ||
+                "The experiment has been configured."
+            );
+
+
+        } catch (error) {
+
+            thinking.remove();
+
+
+            addMessage(
+                "ai",
+                "I couldn't reach the Copilot backend. " +
+                error.message
+            );
+        }
+    }
+
+
+    $("copilotSendBtn")
+        .addEventListener(
+            "click",
+            sendCopilot
+        );
+
+
+    input.addEventListener(
+        "keydown",
+        event => {
+
+            if (
+                event.key === "Enter" &&
+                !event.shiftKey
+            ) {
+
+                event.preventDefault();
+
+                sendCopilot();
+            }
+        }
+    );
+
+
+    document
+        .querySelectorAll(".chip")
+        .forEach(
+            chip => {
+
+                chip.addEventListener(
+                    "click",
+                    () => {
+
+                        input.value =
+                            chip.textContent.trim();
+
+                        sendCopilot();
+                    }
+                );
+            }
+        );
+
+
+    window.RegimeLabAI = {
+
+        notifyDataLoaded(
+            count,
+            filename
+        ) {
+
+            addMessage(
+                "ai",
+                `Loaded ${count.toLocaleString("en-IN")} observations from ${filename}.`
+            );
+        }
     };
 
-    let priceChart = null;
-    let equityChart = null;
 
+    /* =========================================================
+       START
+       ========================================================= */
 
-    /* ---------------- RANDOM NUMBER GENERATOR ---------------- */
+    setupControls();
 
-    function mulberry32(a) {
-        return function () {
+    writeControls();
+
+    runSimulation();
+
+    checkBackend();
+
+})();        return function () {
             let t = a += 0x6D2B79F5;
 
             t = Math.imul(t ^ t >>> 15, t | 1);
