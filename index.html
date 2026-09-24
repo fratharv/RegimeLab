@@ -1,70 +1,449 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <meta charset="UTF-8">
+    <title>RegimeLab — Design the Market. Stress the Strategy.</title>
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+    <meta
+        name="description"
+        content="RegimeLab is an interactive market-regime simulator for testing trading strategies across changing market conditions."
+    >
 
-  <meta
-    name="description"
-    content="RegimeLab — Design the market. Stress the strategy."
-  >
+    <link rel="stylesheet" href="style.css">
 
-  <title>RegimeLab — Market Regime Simulator</title>
-
-  <link
-    rel="stylesheet"
-    href="style.css"
-  >
-
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-
 
 <body>
 
+<div class="app-shell">
 
-  <!-- =====================================================
-       TOP BAR
-       ===================================================== -->
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
 
-  <header class="topbar">
+        <div class="brand">
+            <div class="brand-mark">R</div>
+            <div>
+                <div class="brand-name">RegimeLab</div>
+                <div class="brand-tagline">Market simulation laboratory</div>
+            </div>
+        </div>
 
-    <div class="brand">
+        <div class="sidebar-section">
+            <div class="section-label">MARKET</div>
 
-      <div class="brand-title">
-        RegimeLab
-      </div>
+            <label class="field-label">
+                Market regime
+                <select id="regime">
+                    <option value="trending">Trending</option>
+                    <option value="mean_reverting">Mean Reverting</option>
+                    <option value="high_vol">High Volatility</option>
+                    <option value="shock">Shock</option>
+                </select>
+            </label>
 
-      <div class="brand-subtitle">
-        Design the market. Stress the strategy.
-      </div>
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Trend strength</span>
+                    <output id="trendValue">0.30</output>
+                </div>
+                <input id="trend" type="range" min="0" max="1" step="0.01" value="0.30">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Mean reversion</span>
+                    <output id="meanrevValue">0.20</output>
+                </div>
+                <input id="meanrev" type="range" min="0" max="1" step="0.01" value="0.20">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Volatility</span>
+                    <output id="volValue">0.20</output>
+                </div>
+                <input id="vol" type="range" min="0.05" max="1" step="0.01" value="0.20">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Shock probability</span>
+                    <output id="shockpValue">0.01</output>
+                </div>
+                <input id="shockp" type="range" min="0" max="0.20" step="0.005" value="0.01">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Shock magnitude</span>
+                    <output id="shockmValue">0.05</output>
+                </div>
+                <input id="shockm" type="range" min="0.01" max="0.20" step="0.005" value="0.05">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Persistence</span>
+                    <output id="persistValue">0.85</output>
+                </div>
+                <input id="persist" type="range" min="0.05" max="1" step="0.01" value="0.85">
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-label">SIMULATION</div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Simulation length</span>
+                    <output id="lenValue">1000</output>
+                </div>
+                <input id="len" type="range" min="100" max="5000" step="100" value="1000">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Initial capital</span>
+                    <output id="capValue">₹100,000</output>
+                </div>
+                <input id="cap" type="range" min="10000" max="1000000" step="10000" value="100000">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Moving average</span>
+                    <output id="maValue">20</output>
+                </div>
+                <input id="ma" type="range" min="5" max="100" step="1" value="20">
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-label">STRATEGY</div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Stop loss</span>
+                    <output id="slValue">3.0%</output>
+                </div>
+                <input id="sl" type="range" min="0.5" max="15" step="0.5" value="3">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Take profit</span>
+                    <output id="tpValue">6.0%</output>
+                </div>
+                <input id="tp" type="range" min="0.5" max="30" step="0.5" value="6">
+            </div>
+
+            <div class="control-group">
+                <div class="control-header">
+                    <span>Position size</span>
+                    <output id="psValue">25%</output>
+                </div>
+                <input id="ps" type="range" min="5" max="100" step="5" value="25">
+            </div>
+        </div>
+
+        <button id="generateBtn" class="primary-button">
+            Generate market
+        </button>
+
+        <button id="resetBtn" class="secondary-button">
+            Reset parameters
+        </button>
+
+    </aside>
+
+
+    <!-- MAIN -->
+    <main class="main">
+
+        <header class="topbar">
+            <div>
+                <div class="eyebrow">QUANTITATIVE MARKET SIMULATION</div>
+                <h1>Design the market.<br><em>Stress the strategy.</em></h1>
+                <p class="subtitle">
+                    Construct market regimes, alter their behaviour, and observe how a strategy responds.
+                </p>
+            </div>
+
+            <button id="openCopilotBtn" class="copilot-button">
+                <span class="copilot-dot"></span>
+                AI Copilot
+            </button>
+        </header>
+
+
+        <!-- STATUS -->
+        <section class="market-status">
+
+            <div class="status-main">
+                <span class="status-dot"></span>
+                <div>
+                    <div class="status-label">CURRENT MARKET</div>
+                    <div id="regimeName" class="status-value">Trending</div>
+                </div>
+            </div>
+
+            <div class="status-stat">
+                <span>Price</span>
+                <strong id="currentPrice">₹100.00</strong>
+            </div>
+
+            <div class="status-stat">
+                <span>Observations</span>
+                <strong id="observationCount">1,000</strong>
+            </div>
+
+            <div class="status-stat">
+                <span>Seed</span>
+                <strong id="seedDisplay">—</strong>
+            </div>
+
+        </section>
+
+
+        <!-- CHART -->
+        <section class="card chart-card">
+
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">MARKET PATH</div>
+                    <h2>Simulated price</h2>
+                </div>
+
+                <div id="chartLegend" class="chart-legend">
+                    Price
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="priceChart"></canvas>
+            </div>
+
+        </section>
+
+
+        <!-- METRICS -->
+        <section class="metrics-grid">
+
+            <div class="metric-card">
+                <span>Total return</span>
+                <strong id="totalReturn">0.00%</strong>
+                <small>Strategy performance</small>
+            </div>
+
+            <div class="metric-card">
+                <span>Sharpe ratio</span>
+                <strong id="sharpe">0.00</strong>
+                <small>Risk-adjusted return</small>
+            </div>
+
+            <div class="metric-card">
+                <span>Max drawdown</span>
+                <strong id="maxDrawdown">0.00%</strong>
+                <small>Peak-to-trough loss</small>
+            </div>
+
+            <div class="metric-card">
+                <span>Win rate</span>
+                <strong id="winRate">0.00%</strong>
+                <small>Profitable trades</small>
+            </div>
+
+    </section>
+
+
+        <!-- EQUITY -->
+        <section class="card chart-card">
+
+            <div class="card-header">
+                <div>
+                    <div class="card-kicker">BACKTEST</div>
+                    <h2>Strategy equity</h2>
+                </div>
+
+                <div class="equity-summary">
+                    Final equity:
+                    <strong id="finalEquity">₹100,000</strong>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="equityChart"></canvas>
+            </div>
+
+        </section>
+
+
+        <!-- TRADE STATS -->
+        <section class="secondary-grid">
+
+            <div class="card stats-card">
+
+                <div class="card-kicker">TRADING STATISTICS</div>
+                <h2>Execution profile</h2>
+
+                <div class="stat-row">
+                    <span>Number of trades</span>
+                    <strong id="numTrades">0</strong>
+                </div>
+
+                <div class="stat-row">
+                    <span>Average trade</span>
+                    <strong id="avgTrade">0.00%</strong>
+                </div>
+
+                <div class="stat-row">
+                    <span>Profit factor</span>
+                    <strong id="profitFactor">0.00</strong>
+                </div>
+
+            </div>
+
+
+            <div class="card methodology-card">
+
+                <div class="card-kicker">EXPERIMENT</div>
+                <h2>How to use RegimeLab</h2>
+
+                <p>
+                    Change the market assumptions on the left, generate a new path,
+                    and observe how the strategy's risk and return characteristics change.
+                </p>
+
+                <div class="experiment-step">
+                    <span>01</span>
+                    <div>
+                        <strong>Design</strong>
+                        <small>Choose the market regime and parameters.</small>
+                    </div>
+                </div>
+
+                <div class="experiment-step">
+                    <span>02</span>
+                    <div>
+                        <strong>Simulate</strong>
+                        <small>Generate a stochastic price path.</small>
+                    </div>
+                </div>
+
+                <div class="experiment-step">
+                    <span>03</span>
+                    <div>
+                        <strong>Stress</strong>
+                        <small>Evaluate the strategy under altered conditions.</small>
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- DATA UPLOAD -->
+        <section class="card upload-card">
+
+            <div>
+                <div class="card-kicker">REAL MARKET DATA</div>
+                <h2>Upload a price series</h2>
+                <p>
+                    Load a CSV containing a price column to inspect the behaviour
+                    of an observed market series.
+                </p>
+            </div>
+
+            <label class="upload-button">
+                Choose CSV
+                <input id="csvInput" type="file" accept=".csv,text/csv">
+            </label>
+
+            <div id="uploadStatus" class="upload-status">
+                No file loaded.
+            </div>
+
+        </section>
+
+
+        <footer>
+            <span>RegimeLab</span>
+            <span>Stochastic simulation · Strategy research · Quantitative experimentation</span>
+        </footer>
+
+    </main>
+</div>
+
+
+<!-- COPILOT OVERLAY -->
+<div id="copilotOverlay" class="copilot-overlay"></div>
+
+<aside id="copilotPanel" class="copilot-panel">
+
+    <div class="copilot-header">
+
+        <div>
+            <div class="card-kicker">REGIMELAB INTELLIGENCE</div>
+            <h2>AI Copilot</h2>
+        </div>
+
+        <button id="closeCopilotBtn" class="close-button">×</button>
 
     </div>
 
+    <div class="copilot-intro">
+        Describe the experiment you want to run. The Copilot can modify the
+        simulation parameters and explain the resulting setup.
+    </div>
 
-    <div class="topbar-actions">
+    <div id="copilotLog" class="copilot-log">
 
-      <button
-        id="aiBtn"
-        class="ai-btn"
-        type="button"
-      >
-        ✨ AI Copilot
-      </button>
+        <div class="ai-message">
+            <div class="message-label">COPILOT</div>
+            <p>
+                I can help configure the market. Try asking:
+            </p>
+
+            <div class="suggestion-list">
+                <button class="chip">Create a strong trending market</button>
+                <button class="chip">Make the market highly volatile</button>
+                <button class="chip">Build a mean-reverting environment</button>
+                <button class="chip">Add frequent large shocks</button>
+            </div>
+        </div>
 
     </div>
 
-  </header>
+    <div id="copilotBackendStatus" class="backend-status">
+        Checking backend…
+    </div>
+
+    <div class="copilot-input-area">
+
+        <textarea
+            id="copilotInput"
+            placeholder="Describe your market experiment..."
+            rows="3"
+        ></textarea>
+
+        <button id="copilotSendBtn" class="primary-button">
+            Send to Copilot
+        </button>
+
+    </div>
+
+</aside>
 
 
+<script src="script.js"></script>
+<script src="ai.js"></script>
 
-  <!-- =====================================================
-       MAIN LAYOUT
+</body>
+</html>       MAIN LAYOUT
        ===================================================== -->
 
   <main class="layout">
