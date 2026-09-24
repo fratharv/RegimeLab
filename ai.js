@@ -1,15 +1,8 @@
-// RegimeLab AI Copilot
-// Frontend client -> your backend -> OpenAI API
 
 (function () {
   const $ = id => document.getElementById(id);
 
-  // Your backend URL.
-  // When testing locally:
-  // http://localhost:3000/api/copilot
-  //
-  // When deployed:
-  // https://YOUR-BACKEND-DOMAIN/api/copilot
+
   const ENDPOINT =
     window.REGIMELAB_AI_URL ||
     "http://localhost:3000/api/copilot";
