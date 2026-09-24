@@ -85,8 +85,10 @@
       <div class="chart-head">
         <h3>📈 Synthetic Market Price</h3>
         <div class="legend" id="regimeLegend"></div>
+        <div class="zoom"><button id="zIn" title="Zoom in">＋</button><button id="zOut" title="Zoom out">－</button><button id="zReset">Reset zoom</button></div>
       </div>
       <canvas id="marketChart" height="260"></canvas>
+      <div class="note">Scroll to zoom · drag to pan · double-click to reset. The equity curve follows the same window.</div>
     </div>
 
     <div class="grid2">
@@ -127,15 +129,7 @@
 <button id="aiBtn" class="ai-btn">✨ AI Copilot</button>
 <aside id="aiPanel" class="ai-panel" aria-label="AI Copilot">
   <div class="ai-head"><b>✨ AI Copilot</b><span class="ai-sub">Qwen</span>
-    <button id="aiCfgBtn" title="Settings">⚙</button><button id="aiClose" title="Close">✕</button></div>
-  <div id="aiCfg" class="ai-cfg">
-    <label>Qwen API key<input type="password" id="aiKey" placeholder="sk-..." autocomplete="off"></label>
-    <label>Region<select id="aiRegion">
-      <option value="https://dashscope-intl.aliyuncs.com/compatible-mode/v1">International (Singapore)</option>
-      <option value="https://dashscope.aliyuncs.com/compatible-mode/v1">China (Beijing)</option></select></label>
-    <label>Model<select id="aiModel"><option>qwen-plus</option><option>qwen-max</option><option>qwen-turbo</option></select></label>
-    <div class="note">The key is saved only in this browser (localStorage) and sent only to Alibaba's API.</div>
-  </div>
+    <button id="aiClose" title="Close">✕</button></div>
   <div id="aiLog" class="ai-log"></div>
   <div class="ai-chips">
     <button data-q="Analyze this run: what worked, what didn't, and how do I improve the strategy?">Analyze this run</button>
@@ -147,6 +141,7 @@
   <div class="ai-input"><textarea id="aiText" rows="2" placeholder="Ask, or tell me to change the market/strategy…"></textarea><button id="aiSend">Send</button></div>
 </aside>
 <script src="script.js"></script>
+<script src="config.js"></script>
 <script src="ai.js"></script>
 </body>
 </html>
