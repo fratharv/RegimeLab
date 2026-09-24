@@ -18,7 +18,9 @@ regimelab/
 ├── index.html   # markup
 ├── style.css    # all styling (dark theme, layout, components)
 ├── script.js    # market generator, strategy engine, backtester, charts
-├── ai.js        # Qwen AI Copilot side panel
+├── ai.js        # AI Copilot side panel
+├── config.js    # AI proxy URL
+├── worker/worker.js  # Cloudflare Worker that holds the Qwen key
 └── README.md
 ```
 
@@ -76,16 +78,25 @@ python3 -m http.server 8000
 - Every slider re-runs the strategy live; **Run Simulation** reseeds
   the random market so you can stress-test across many draws.
 
-## AI Copilot (Qwen)
+## AI Copilot (Qwen) — no API key for end users
 
-Click **✨ AI Copilot**, open ⚙, paste your Qwen (Alibaba Model Studio /
-DashScope) API key, pick the region the key was created in, and chat.
-It comments on your results and can change sliders or reseed the market
-("make it choppier", "widen my stop loss", "Apple-like market").
-Qwen has no live market data, so for a real stock upload a price CSV
-(needs a `Close` column, e.g. a Yahoo Finance download) with **Upload prices CSV**.
-The key stays in your browser's localStorage; anyone using your hosted
-page enters their own key. Never commit a key into the repo.
+Users just open **✨ AI Copilot** and type ("Apple-like market", "make it
+choppier", "analyze this run"). The AI reads the current results, comments,
+and moves the sliders. Upload a price CSV (needs a `Close` column) to test
+on real data. If the AI is unreachable, a built-in offline parser still handles
+common commands.
+
+**Never put your Qwen key in the website code**, because anyone can read it on GitHub Pages.
+Instead, the key lives in a tiny free proxy (`worker/worker.js`, Cloudflare Workers):
+
+1. Get a Qwen key at Alibaba Cloud Model Studio and set a spend limit there.
+2. Cloudflare dashboard → Workers & Pages → Create Worker → paste `worker/worker.js` → Deploy.
+3. Worker → Settings → Variables and Secrets: add secret `QWEN_API_KEY`
+   (and optional plain vars `ALLOWED_ORIGIN` = `https://<you>.github.io`,
+   `MODEL` = `qwen-plus`, `BASE_URL` for the China region).
+4. Put the worker URL in `config.js`, commit, push.
+
+Chart tips: scroll to zoom, drag to pan, double-click to reset.
 
 ## Ideas for extending it (didn't fit before the hackathon deadline)
 
