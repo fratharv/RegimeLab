@@ -1,70 +1,1060 @@
-/* ============================================================
-   RegimeLab — core simulator, backtester, charts, window.RL API
-   ============================================================ */
+(() => {
+    "use strict";
 
-(function () {
-  "use strict";
+    const REGIMES = [
+        "trending",
+        "mean_reverting",
+        "high_vol",
+        "shock"
+    ];
 
-  /* ---------- constants ---------- */
+    const REGIME_LABEL = {
+        trending: "Trending",
+        mean_reverting: "Mean Reverting",
+        high_vol: "High Volatility",
+        shock: "Shock"
+    };
 
-  const REGIMES = ["trending", "mean_reverting", "high_vol", "shock"];
-  const REGIME_LABEL = {
-    trending: "Trending",
-    mean_reverting: "Mean Reverting",
-    high_vol: "High Volatility",
-    shock: "Shock",
-  };
-  const REGIME_COLOR = {
-    trending: "#3ecf8e",
-    mean_reverting: "#4f8cff",
-    high_vol: "#d9a441",
-    shock: "#e5484d",
-  };
+    const PARAMS = [
+        "trend",
+        "meanrev",
+        "vol",
+        "shockp",
+        "shockm",
+        "persist",
+        "len",
+        "cap",
+        "ma",
+        "sl",
+        "tp",
+        "ps"
+    ];
 
-  const PARAM_SPEC = {
-    trend: { min: 0, max: 1 },
-    meanrev: { min: 0, max: 1 },
-    vol: { min: 0.05, max: 1 },
-    shockp: { min: 0, max: 0.2 },
-    shockm: { min: 0.01, max: 0.2 },
-    persist: { min: 0.05, max: 1 },
-    trans: { min: 0, max: 1 },
-    len: { min: 100, max: 5000 },
-    cap: { min: 10000, max: 1000000 },
-    ma: { min: 5, max: 100 },
-    sl: { min: 0.5, max: 15 },
-    tp: { min: 0.5, max: 30 },
-    ps: { min: 5, max: 100 },
-  };
+    const defaults = {
+        regime: "trending",
+        trend: 0.30,
+        meanrev: 0.20,
+        vol: 0.20,
+        shockp: 0.01,
+        shockm: 0.05,
+        persist: 0.85,
+        len: 1000,
+        cap: 100000,
+        ma: 20,
+        sl: 3,
+        tp: 6,
+        ps: 25
+    };
 
-  const DEFAULT_PARAMS = {
-    trend: 0.3,
-    meanrev: 0.2,
-    vol: 0.2,
-    shockp: 0.01,
-    shockm: 0.05,
-    persist: 0.85,
-    trans: 0.05,
-    len: 1000,
-    cap: 100000,
-    ma: 20,
-    sl: 3,
-    tp: 6,
-    ps: 25,
-  };
+    let seed = Math.floor(Math.random() * 4294967295);
 
-  /* ---------- state ---------- */
+    let state = {
+        ...defaults,
+        prices: [],
+        equity: [],
+        metrics: null
+    };
 
-  let params = Object.assign({}, DEFAULT_PARAMS);
-  let seed = Math.floor(Math.random() * 2 ** 31);
-  let dataSource = "synthetic"; // "synthetic" | "real"
-  let realPrices = null;
+    let priceChart = null;
+    let equityChart = null;
 
-  let lastResult = null; // { prices, regimes, equity, dates, metrics, byRegime, trades }
 
-  let priceChart = null;
-  let equityChart = null;
+    /* ---------------- RANDOM NUMBER GENERATOR ---------------- */
 
+    function mulberry32(a) {
+        return function () {
+            let t = a += 0x6D2B79F5;
+
+            t = Math.imul(t ^ t >>> 15, t | 1);
+            t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+
+            return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+    }
+
+
+    function normalRandom(rng) {
+        let u = 0;
+        let v = 0;
+
+        while (u === 0) u = rng();
+        while (v === 0) v = rng();
+
+        return Math.sqrt(-2 * Math.log(u)) *
+            Math.cos(2 * Math.PI * v);
+    }
+
+
+    /* ---------------- MARKET GENERATION ---------------- */
+
+    function generateMarket() {
+
+        const rng = mulberry32(seed);
+
+        const n = Number(state.len);
+
+        const prices = new Array(n);
+
+        let price = 100;
+
+        let previousReturn = 0;
+
+        let longRunMean = 100;
+
+        for (let i = 0; i < n; i++) {
+
+            let ret = 0;
+
+            const noise =
+                normalRandom(rng) *
+                Number(state.vol) *
+                0.01;
+
+            if (state.regime === "trending") {
+
+                const drift =
+                    Number(state.trend) * 0.0009;
+
+                const momentum =
+                    Number(state.persist) *
+                    previousReturn *
+                    0.45;
+
+                ret = drift + momentum + noise;
+            }
+
+            else if (state.regime === "mean_reverting") {
+
+                const deviation =
+                    (longRunMean - price) /
+                    Math.max(price, 1);
+
+                const reversion =
+                    Number(state.meanrev) *
+                    deviation *
+                    0.16;
+
+                ret = reversion + noise;
+            }
+
+            else if (state.regime === "high_vol") {
+
+                const largeNoise =
+                    normalRandom(rng) *
+                    Math.max(Number(state.vol), 0.35) *
+                    0.025;
+
+                ret =
+                    largeNoise +
+                    previousReturn *
+                    Number(state.persist) *
+                    0.25;
+            }
+
+            else if (state.regime === "shock") {
+
+                ret =
+                    Number(state.trend) * 0.0005 +
+                    noise;
+
+                if (rng() < Number(state.shockp)) {
+
+                    const direction =
+                        rng() < 0.5 ? -1 : 1;
+
+                    ret +=
+                        direction *
+                        Number(state.shockm) *
+                        (0.6 + rng() * 0.8);
+                }
+            }
+
+            price *= Math.exp(ret);
+
+            price = Math.max(price, 1);
+
+            prices[i] = price;
+
+            previousReturn = ret;
+
+            longRunMean =
+                longRunMean * 0.999 +
+                price * 0.001;
+        }
+
+        return prices;
+    }
+
+
+    /* ---------------- MOVING AVERAGE ---------------- */
+
+    function movingAverage(prices, window) {
+
+        const result = new Array(prices.length);
+
+        let sum = 0;
+
+        for (let i = 0; i < prices.length; i++) {
+
+            sum += prices[i];
+
+            if (i >= window) {
+                sum -= prices[i - window];
+            }
+
+            const count = Math.min(i + 1, window);
+
+            result[i] = sum / count;
+        }
+
+        return result;
+    }
+
+
+    /* ---------------- STRATEGY ---------------- */
+
+    function backtest(prices) {
+
+        const capital = Number(state.cap);
+
+        const positionFraction =
+            Number(state.ps) / 100;
+
+        const maWindow =
+            Number(state.ma);
+
+        const stopLoss =
+            Number(state.sl) / 100;
+
+        const takeProfit =
+            Number(state.tp) / 100;
+
+        const ma = movingAverage(prices, maWindow);
+
+        let cash = capital;
+        let position = 0;
+
+        let entryPrice = 0;
+
+        let equity = [];
+
+        let trades = [];
+
+        for (let i = 0; i < prices.length; i++) {
+
+            const price = prices[i];
+
+            if (i < maWindow) {
+
+                equity.push(cash);
+                continue;
+            }
+
+            /*
+             * Simple mean-reversion strategy:
+             *
+             * Price below MA -> long
+             * Price above MA -> flat
+             *
+             * This is intentionally simple because
+             * RegimeLab is about studying how a strategy
+             * behaves under different market structures.
+             */
+
+            if (position === 0) {
+
+                if (price < ma[i]) {
+
+                    const allocation =
+                        cash * positionFraction;
+
+                    position =
+                        allocation / price;
+
+                    cash -= allocation;
+
+                    entryPrice = price;
+                }
+            }
+
+            else {
+
+                const tradeReturn =
+                    (price - entryPrice) /
+                    entryPrice;
+
+                const shouldTakeProfit =
+                    tradeReturn >= takeProfit;
+
+                const shouldStop =
+                    tradeReturn <= -stopLoss;
+
+                const shouldExitMA =
+                    price >= ma[i];
+
+                if (
+                    shouldTakeProfit ||
+                    shouldStop ||
+                    shouldExitMA
+                ) {
+
+                    cash += position * price;
+
+                    trades.push(tradeReturn);
+
+                    position = 0;
+
+                    entryPrice = 0;
+                }
+            }
+
+            const currentEquity =
+                cash + position * price;
+
+            equity.push(currentEquity);
+        }
+
+        if (position > 0) {
+
+            const lastPrice =
+                prices[prices.length - 1];
+
+            const tradeReturn =
+                (lastPrice - entryPrice) /
+                entryPrice;
+
+            cash += position * lastPrice;
+
+            trades.push(tradeReturn);
+
+            position = 0;
+        }
+
+        equity[equity.length - 1] = cash;
+
+        return {
+            equity,
+            trades
+        };
+    }
+
+
+    /* ---------------- METRICS ---------------- */
+
+    function calculateMetrics(prices, result) {
+
+        const equity = result.equity;
+        const trades = result.trades;
+
+        const initial =
+            Number(state.cap);
+
+        const finalEquity =
+            equity[equity.length - 1];
+
+        const totalReturn =
+            (finalEquity / initial) - 1;
+
+        const returns = [];
+
+        for (let i = 1; i < equity.length; i++) {
+
+            if (equity[i - 1] !== 0) {
+
+                returns.push(
+                    equity[i] /
+                    equity[i - 1] -
+                    1
+                );
+            }
+        }
+
+        const mean =
+            returns.length
+                ? returns.reduce((a, b) => a + b, 0) /
+                  returns.length
+                : 0;
+
+        const variance =
+            returns.length
+                ? returns.reduce(
+                    (sum, r) =>
+                        sum + Math.pow(r - mean, 2),
+                    0
+                ) / returns.length
+                : 0;
+
+        const std =
+            Math.sqrt(variance);
+
+        const sharpe =
+            std === 0
+                ? 0
+                : (mean / std) *
+                  Math.sqrt(252);
+
+        let peak = equity[0] || initial;
+
+        let maxDrawdown = 0;
+
+        for (const value of equity) {
+
+            peak = Math.max(peak, value);
+
+            const drawdown =
+                (value - peak) / peak;
+
+            maxDrawdown =
+                Math.min(maxDrawdown, drawdown);
+        }
+
+        const wins =
+            trades.filter(t => t > 0);
+
+        const losses =
+            trades.filter(t => t <= 0);
+
+        const winRate =
+            trades.length
+                ? wins.length / trades.length
+                : 0;
+
+        const avgTrade =
+            trades.length
+                ? trades.reduce((a, b) => a + b, 0) /
+                  trades.length
+                : 0;
+
+        const grossProfit =
+            wins.reduce((a, b) => a + b, 0);
+
+        const grossLoss =
+            Math.abs(
+                losses.reduce((a, b) => a + b, 0)
+            );
+
+        const profitFactor =
+            grossLoss === 0
+                ? grossProfit > 0
+                    ? Infinity
+                    : 0
+                : grossProfit / grossLoss;
+
+        return {
+            totalReturn,
+            sharpe,
+            maxDrawdown,
+            winRate,
+            numTrades: trades.length,
+            avgTrade,
+            profitFactor,
+            finalEquity
+        };
+    }
+
+
+    /* ---------------- FORMATTING ---------------- */
+
+    function money(value) {
+
+        return new Intl.NumberFormat(
+            "en-IN",
+            {
+                style: "currency",
+                currency: "INR",
+                maximumFractionDigits: 0
+            }
+        ).format(value);
+    }
+
+
+    function percent(value) {
+
+        return `${(value * 100).toFixed(2)}%`;
+    }
+
+
+    function number(value) {
+
+        return Number(value).toLocaleString("en-IN");
+    }
+
+
+    /* ---------------- CHARTS ---------------- */
+
+    function makeCharts() {
+
+        if (priceChart) {
+            priceChart.destroy();
+        }
+
+        if (equityChart) {
+            equityChart.destroy();
+        }
+
+        const baseOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: {
+                intersect: false,
+                mode: "index"
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        color: "#8b897f",
+                        maxTicksLimit: 8,
+                        font: {
+                            size: 9
+                        }
+                    }
+                },
+                y: {
+                    grid: {
+                        color: "#e4e1d9"
+                    },
+                    ticks: {
+                        color: "#8b897f",
+                        font: {
+                            size: 9
+                        }
+                    }
+                }
+            }
+        };
+
+        const labels =
+            state.prices.map((_, i) => i + 1);
+
+        priceChart = new Chart(
+            document.getElementById("priceChart"),
+            {
+                type: "line",
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            data: state.prices,
+                            borderColor: "#292a27",
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            tension: 0.05
+                        }
+                    ]
+                },
+                options: baseOptions
+            }
+        );
+
+        equityChart = new Chart(
+            document.getElementById("equityChart"),
+            {
+                type: "line",
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            data: state.equity,
+                            borderColor: "#9b8561",
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            tension: 0.05
+                        }
+                    ]
+                },
+                options: baseOptions
+            }
+        );
+    }
+
+
+    /* ---------------- UI ---------------- */
+
+    function updateOutputs() {
+
+        document.getElementById("trendValue").textContent =
+            Number(state.trend).toFixed(2);
+
+        document.getElementById("meanrevValue").textContent =
+            Number(state.meanrev).toFixed(2);
+
+        document.getElementById("volValue").textContent =
+            Number(state.vol).toFixed(2);
+
+        document.getElementById("shockpValue").textContent =
+            Number(state.shockp).toFixed(3);
+
+        document.getElementById("shockmValue").textContent =
+            Number(state.shockm).toFixed(3);
+
+        document.getElementById("persistValue").textContent =
+            Number(state.persist).toFixed(2);
+
+        document.getElementById("lenValue").textContent =
+            number(state.len);
+
+        document.getElementById("capValue").textContent =
+            money(state.cap);
+
+        document.getElementById("maValue").textContent =
+            state.ma;
+
+        document.getElementById("slValue").textContent =
+            `${Number(state.sl).toFixed(1)}%`;
+
+        document.getElementById("tpValue").textContent =
+            `${Number(state.tp).toFixed(1)}%`;
+
+        document.getElementById("psValue").textContent =
+            `${Number(state.ps).toFixed(0)}%`;
+
+        document.getElementById("regimeName").textContent =
+            REGIME_LABEL[state.regime];
+    }
+
+
+    function updateMetrics(metrics) {
+
+        document.getElementById("totalReturn").textContent =
+            percent(metrics.totalReturn);
+
+        document.getElementById("sharpe").textContent =
+            metrics.sharpe.toFixed(2);
+
+        document.getElementById("maxDrawdown").textContent =
+            percent(metrics.maxDrawdown);
+
+        document.getElementById("winRate").textContent =
+            percent(metrics.winRate);
+
+        document.getElementById("numTrades").textContent =
+            number(metrics.numTrades);
+
+        document.getElementById("avgTrade").textContent =
+            percent(metrics.avgTrade);
+
+        document.getElementById("profitFactor").textContent =
+            Number.isFinite(metrics.profitFactor)
+                ? metrics.profitFactor.toFixed(2)
+                : "∞";
+
+        document.getElementById("finalEquity").textContent =
+            money(metrics.finalEquity);
+    }
+
+
+    function updateStatus() {
+
+        const latest =
+            state.prices[state.prices.length - 1] || 100;
+
+        document.getElementById("currentPrice").textContent =
+            money(latest);
+
+        document.getElementById("observationCount").textContent =
+            number(state.prices.length);
+
+        document.getElementById("seedDisplay").textContent =
+            String(seed);
+    }
+
+
+    /* ---------------- SIMULATION ---------------- */
+
+    function runSimulation() {
+
+        seed =
+            Math.floor(
+                Math.random() * 4294967295
+            );
+
+        state.prices =
+            generateMarket();
+
+        const result =
+            backtest(state.prices);
+
+        state.equity =
+            result.equity;
+
+        state.metrics =
+            calculateMetrics(
+                state.prices,
+                result
+            );
+
+        updateOutputs();
+
+        updateStatus();
+
+        updateMetrics(state.metrics);
+
+        makeCharts();
+    }
+
+
+    /* ---------------- PARAMETERS ---------------- */
+
+    function readControls() {
+
+        state.regime =
+            document.getElementById("regime").value;
+
+        for (const id of PARAMS) {
+
+            const element =
+                document.getElementById(id);
+
+            if (element) {
+                state[id] =
+                    Number(element.value);
+            }
+        }
+    }
+
+
+    function writeControls() {
+
+        document.getElementById("regime").value =
+            state.regime;
+
+        for (const id of PARAMS) {
+
+            const element =
+                document.getElementById(id);
+
+            if (element) {
+                element.value =
+                    state[id];
+            }
+        }
+
+        updateOutputs();
+    }
+
+
+    function setupControls() {
+
+        const regime =
+            document.getElementById("regime");
+
+        regime.addEventListener(
+            "change",
+            () => {
+                readControls();
+                runSimulation();
+            }
+        );
+
+        for (const id of PARAMS) {
+
+            const element =
+                document.getElementById(id);
+
+            element.addEventListener(
+                "input",
+                () => {
+
+                    state[id] =
+                        Number(element.value);
+
+                    updateOutputs();
+                }
+            );
+
+            element.addEventListener(
+                "change",
+                () => {
+
+                    readControls();
+                    runSimulation();
+                }
+            );
+        }
+    }
+
+
+    /* ---------------- RESET ---------------- */
+
+    function reset() {
+
+        state = {
+            ...defaults,
+            prices: [],
+            equity: [],
+            metrics: null
+        };
+
+        writeControls();
+
+        runSimulation();
+    }
+
+
+    /* ---------------- CSV ---------------- */
+
+    function parseCSV(text) {
+
+        const rows =
+            text
+                .split(/\r?\n/)
+                .map(row =>
+                    row
+                        .split(",")
+                        .map(cell =>
+                            cell.trim()
+                        )
+                )
+                .filter(row => row.length);
+
+        if (!rows.length) {
+            return [];
+        }
+
+        const header =
+            rows[0].map(x =>
+                x.toLowerCase()
+            );
+
+        let index =
+            header.findIndex(
+                x =>
+                    x === "price" ||
+                    x === "close" ||
+                    x === "adj close" ||
+                    x === "adj_close"
+            );
+
+        if (index === -1) {
+
+            index = rows[0].findIndex(
+                x => {
+                    const value =
+                        Number(
+                            x.replace(/[^\d.-]/g, "")
+                        );
+
+                    return Number.isFinite(value);
+                }
+            );
+        }
+
+        if (index === -1) {
+            return [];
+        }
+
+        return rows
+            .slice(1)
+            .map(row =>
+                Number(
+                    row[index]
+                        ?.replace(/[^\d.-]/g, "")
+                )
+            )
+            .filter(
+                value =>
+                    Number.isFinite(value) &&
+                    value > 0
+            );
+    }
+
+
+    function loadRealPrices(prices, filename) {
+
+        if (prices.length < 2) {
+            alert(
+                "The CSV does not contain enough price observations."
+            );
+            return;
+        }
+
+        state.prices = prices;
+
+        /*
+         * We keep the existing strategy settings and
+         * backtest the uploaded market series.
+         */
+
+        const result =
+            backtest(prices);
+
+        state.equity =
+            result.equity;
+
+        state.metrics =
+            calculateMetrics(
+                prices,
+                result
+            );
+
+        document.getElementById("regimeName").textContent =
+            "Observed data";
+
+        document.getElementById("uploadStatus").textContent =
+            `${filename} · ${number(prices.length)} price observations loaded.`;
+
+        updateStatus();
+
+        updateMetrics(state.metrics);
+
+        makeCharts();
+
+        if (
+            window.RegimeLabAI &&
+            typeof window.RegimeLabAI.notifyDataLoaded === "function"
+        ) {
+            window.RegimeLabAI.notifyDataLoaded(
+                prices.length,
+                filename
+            );
+        }
+    }
+
+
+    /* ---------------- PUBLIC API ---------------- */
+
+    window.RL = {
+
+        snapshot() {
+
+            return {
+                regime: state.regime,
+                trend: state.trend,
+                meanrev: state.meanrev,
+                vol: state.vol,
+                shockp: state.shockp,
+                shockm: state.shockm,
+                persist: state.persist,
+                len: state.len,
+                cap: state.cap,
+                ma: state.ma,
+                sl: state.sl,
+                tp: state.tp,
+                ps: state.ps,
+                currentPrice:
+                    state.prices[
+                        state.prices.length - 1
+                    ] || null,
+                metrics: state.metrics
+            };
+        },
+
+
+        apply(actions) {
+
+            if (!actions) {
+                return;
+            }
+
+            if (actions.regime) {
+
+                const allowed =
+                    REGIMES.includes(actions.regime);
+
+                if (allowed) {
+                    state.regime =
+                        actions.regime;
+                }
+            }
+
+            for (const id of PARAMS) {
+
+                if (
+                    actions[id] !== undefined &&
+                    Number.isFinite(
+                        Number(actions[id])
+                    )
+                ) {
+                    state[id] =
+                        Number(actions[id]);
+                }
+            }
+
+            writeControls();
+
+            runSimulation();
+        },
+
+
+        loadPrices
+            : loadRealPrices
+    };
+
+
+    /* ---------------- EVENTS ---------------- */
+
+    document
+        .getElementById("generateBtn")
+        .addEventListener(
+            "click",
+            () => {
+                readControls();
+                runSimulation();
+            }
+        );
+
+
+    document
+        .getElementById("resetBtn")
+        .addEventListener(
+            "click",
+            reset
+        );
+
+
+    document
+        .getElementById("csvInput")
+        .addEventListener(
+            "change",
+            event => {
+
+                const file =
+                    event.target.files[0];
+
+                if (!file) {
+                    return;
+                }
+
+                const reader =
+                    new FileReader();
+
+                reader.onload =
+                    () => {
+
+                        const prices =
+                            parseCSV(
+                                reader.result
+                            );
+
+                        loadRealPrices(
+                            prices,
+                            file.name
+                        );
+                    };
+
+                reader.readAsText(file);
+            }
+        );
+
+
+    /* ---------------- START ---------------- */
+
+    setupControls();
+
+    writeControls();
+
+    runSimulation();
+
+})();
   /* ---------- helpers ---------- */
 
   function clamp(v, min, max) {
