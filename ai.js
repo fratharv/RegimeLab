@@ -1,71 +1,305 @@
-/* ============================================================
-   RegimeLab — AI Copilot frontend
-   Talks to a private backend, never to OpenAI directly.
-   ============================================================ */
+(() => {
+    "use strict";
 
-(function () {
-  "use strict";
+    const ENDPOINT =
+        "http://localhost:3000/api/copilot";
 
-  // ---------------------------------------------------------------
-  // CONFIGURE YOUR BACKEND URL HERE.
-  //
-  // Local development (Node backend running on your machine):
-  //   const ENDPOINT = "http://localhost:3000/api/copilot";
-  //
-  // Production (after you deploy the backend somewhere, e.g. Render,
-  // Railway, Fly.io, a VPS, etc.):
-  //   const ENDPOINT = "https://YOUR-BACKEND-DOMAIN/api/copilot";
-  // ---------------------------------------------------------------
-  const ENDPOINT = "http://localhost:3000/api/copilot";
+    const panel =
+        document.getElementById("copilotPanel");
 
-  const ALLOWED_PARAM_KEYS = [
-    "trend", "meanrev", "vol", "shockp", "shockm",
-    "persist", "trans", "len", "cap", "ma", "sl", "tp", "ps",
-  ];
+    const overlay =
+        document.getElementById("copilotOverlay");
 
-  let backendReachable = null; // null = unknown, true/false once tested
+    const input =
+        document.getElementById("copilotInput");
 
-  function el(id) {
-    return document.getElementById(id);
-  }
+    const log =
+        document.getElementById("copilotLog");
 
-  function openPanel() {
-    el("copilotPanel").classList.add("open");
-    el("copilotOverlay").classList.add("open");
-    el("copilotInput").focus();
-  }
+    const status =
+        document.getElementById("copilotBackendStatus");
 
-  function closePanel() {
-    el("copilotPanel").classList.remove("open");
-    el("copilotOverlay").classList.remove("open");
-  }
 
-  function appendMessage(text, cls) {
-    const log = el("copilotLog");
-    const div = document.createElement("div");
-    div.className = "msg " + cls;
-    div.textContent = text;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
-    return div;
-  }
+    function openCopilot() {
 
-  function setBackendStatus(text) {
-    const s = el("copilotBackendStatus");
-    if (s) s.textContent = text;
-  }
+        panel.classList.add("open");
+        overlay.classList.add("open");
 
-  function sanitizeActions(actions) {
-    if (!actions || typeof actions !== "object") return null;
-    const out = {};
-    if (actions.params && typeof actions.params === "object") {
-      const p = {};
-      for (const key of ALLOWED_PARAM_KEYS) {
-        if (actions.params[key] !== undefined) {
-          const v = Number(actions.params[key]);
-          if (Number.isFinite(v)) p[key] = v;
+        setTimeout(
+            () => input.focus(),
+            250
+        );
+    }
+
+
+    function closeCopilot() {
+
+        panel.classList.remove("open");
+        overlay.classList.remove("open");
+    }
+
+
+    document
+        .getElementById("openCopilotBtn")
+        .addEventListener(
+            "click",
+            openCopilot
+        );
+
+
+    document
+        .getElementById("closeCopilotBtn")
+        .addEventListener(
+            "click",
+            closeCopilot
+        );
+
+
+    overlay.addEventListener(
+        "click",
+        closeCopilot
+    );
+
+
+    function addUserMessage(message) {
+
+        const wrapper =
+            document.createElement("div");
+
+        wrapper.className =
+            "user-message";
+
+        wrapper.innerHTML = `
+            <div class="message-label">YOU</div>
+            <p>${escapeHTML(message)}</p>
+        `;
+
+        log.appendChild(wrapper);
+
+        log.scrollTop =
+            log.scrollHeight;
+    }
+
+
+    function addAIMessage(message) {
+
+        const wrapper =
+            document.createElement("div");
+
+        wrapper.className =
+            "ai-message";
+
+        wrapper.innerHTML = `
+            <div class="message-label">COPILOT</div>
+            <p>${escapeHTML(message)}</p>
+        `;
+
+        log.appendChild(wrapper);
+
+        log.scrollTop =
+            log.scrollHeight;
+    }
+
+
+    function escapeHTML(value) {
+
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+
+    async function checkBackend() {
+
+        try {
+
+            const response =
+                await fetch(
+                    "http://localhost:3000/api/health"
+                );
+
+            if (!response.ok) {
+                throw new Error();
+            }
+
+            status.textContent =
+                "Backend connected · AI Copilot ready";
+
+        } catch {
+
+            status.textContent =
+                "Backend offline · start the backend server";
         }
-      }
+    }
+
+
+    async function sendToBackend(message) {
+
+        const response =
+            await fetch(
+                ENDPOINT,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+                    body: JSON.stringify({
+                        message,
+                        state:
+                            window.RL
+                                ? window.RL.snapshot()
+                                : {}
+                    })
+                }
+            );
+
+        if (!response.ok) {
+
+            let errorText =
+                "The AI request failed.";
+
+            try {
+
+                const data =
+                    await response.json();
+
+                if (data.error) {
+                    errorText =
+                        data.error;
+                }
+
+            } catch {}
+
+            throw new Error(errorText);
+        }
+
+        return response.json();
+    }
+
+
+    async function send() {
+
+        const message =
+            input.value.trim();
+
+        if (!message) {
+            return;
+        }
+
+        input.value = "";
+
+        addUserMessage(message);
+
+        const thinking =
+            document.createElement("div");
+
+        thinking.className =
+            "ai-message";
+
+        thinking.innerHTML = `
+            <div class="message-label">COPILOT</div>
+            <p>Analysing the experiment…</p>
+        `;
+
+        log.appendChild(thinking);
+
+        log.scrollTop =
+            log.scrollHeight;
+
+        try {
+
+            const data =
+                await sendToBackend(message);
+
+            thinking.remove();
+
+            if (data.actions &&
+                window.RL) {
+
+                window.RL.apply(
+                    data.actions
+                );
+            }
+
+            addAIMessage(
+                data.reply ||
+                "The simulation has been updated."
+            );
+
+        } catch (error) {
+
+            thinking.remove();
+
+            addAIMessage(
+                `I couldn't reach the Copilot backend. ${error.message}`
+            );
+        }
+    }
+
+
+    document
+        .getElementById("copilotSendBtn")
+        .addEventListener(
+            "click",
+            send
+        );
+
+
+    input.addEventListener(
+        "keydown",
+        event => {
+
+            if (
+                event.key === "Enter" &&
+                !event.shiftKey
+            ) {
+
+                event.preventDefault();
+
+                send();
+            }
+        }
+    );
+
+
+    document
+        .querySelectorAll(".chip")
+        .forEach(
+            chip => {
+
+                chip.addEventListener(
+                    "click",
+                    () => {
+
+                        input.value =
+                            chip.textContent;
+
+                        send();
+                    }
+                );
+            }
+        );
+
+
+    window.RegimeLabAI = {
+
+        notifyDataLoaded(count, filename) {
+
+            addAIMessage(
+                `Loaded ${count.toLocaleString("en-IN")} observations from ${filename}. I can now help interpret the observed series and adjust the experiment.`
+            );
+        }
+
+    };
+
+
+    checkBackend();
+
+})();      }
       if (Object.keys(p).length > 0) out.params = p;
     }
     if (actions.reseed === true) out.reseed = true;
