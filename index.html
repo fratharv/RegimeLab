@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RegimeLab — Design the market. Stress the strategy.</title>
+<meta name="description" content="A synthetic market regime laboratory for testing trading strategy robustness across trending, mean-reverting, high-volatility and shock regimes.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><text y=%22.9em%22 font-size=%2220%22>📈</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M3 17L9 11L13 15L21 5" stroke="#3b82f6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 5H21V11" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    RegimeLab
+  </div>
+  <div class="tagline">Design the market. Stress the strategy.</div>
+  <button class="run" id="runBtn">▶ Run Simulation</button>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="panel">
+      <div class="tabs">
+        <button class="active" data-tab="market">Market &amp; Regime</button>
+        <button data-tab="strategy">Strategy</button>
+      </div>
+
+      <div id="tab-market">
+        <div class="section-label">Market behaviour</div>
+        <div class="field"><label>Trend Strength <span class="val" id="v_trend">0.6</span></label>
+          <input type="range" id="trend" min="0" max="1" step="0.01" value="0.6"></div>
+        <div class="field"><label>Mean Reversion Strength <span class="val" id="v_meanrev">0.3</span></label>
+          <input type="range" id="meanrev" min="0" max="1" step="0.01" value="0.3"></div>
+        <div class="field"><label>Volatility <span class="val" id="v_vol">0.5</span></label>
+          <input type="range" id="vol" min="0.05" max="1" step="0.01" value="0.5"></div>
+        <div class="field"><label>Shock Probability <span class="val" id="v_shockp">0.05</span></label>
+          <input type="range" id="shockp" min="0" max="0.2" step="0.005" value="0.05"></div>
+        <div class="field"><label>Shock Magnitude <span class="val" id="v_shockm">0.10</span></label>
+          <input type="range" id="shockm" min="0.01" max="0.2" step="0.005" value="0.10"></div>
+
+        <div class="section-label">Regime settings</div>
+        <div class="field"><label>Regime Persistence <span class="val" id="v_persist">0.7</span></label>
+          <input type="range" id="persist" min="0.05" max="1" step="0.01" value="0.7"></div>
+        <div class="field"><label>Transition Probability <span class="val" id="v_trans">0.3</span></label>
+          <input type="range" id="trans" min="0" max="1" step="0.01" value="0.3"></div>
+
+        <div class="section-label">Simulation settings</div>
+        <div class="field"><label>Simulation Length (periods) <span class="val" id="v_len">1000</span></label>
+          <input type="range" id="len" min="100" max="5000" step="50" value="1000"></div>
+        <div class="field"><label>Initial Capital (₹) <span class="val" id="v_cap">100,000</span></label>
+          <input type="range" id="cap" min="10000" max="1000000" step="10000" value="100000"></div>
+
+        <div class="section-label">Presets</div>
+        <div class="presets">
+          <button data-preset="trending">Trending</button>
+          <button data-preset="meanrev">Mean Reverting</button>
+          <button data-preset="highvol">High Volatility</button>
+          <button data-preset="shock">Shock Market</button>
+          <button data-preset="custom">Custom</button>
+        </div>
+      </div>
+
+      <div id="tab-strategy" style="display:none">
+        <div class="section-label">Rule</div>
+        <div class="strategy-rule">
+          <b>BUY</b> when price crosses above the <b id="maLbl1">20</b>-period MA.<br>
+          <b>SELL</b> when price crosses below the <b id="maLbl2">20</b>-period MA.
+        </div>
+        <div class="field"><label>Moving Average Period <span class="val" id="v_ma">20</span></label>
+          <input type="range" id="ma" min="5" max="100" step="1" value="20"></div>
+        <div class="field"><label>Stop Loss (%) <span class="val" id="v_sl">2.0</span></label>
+          <input type="range" id="sl" min="0.5" max="15" step="0.1" value="2.0"></div>
+        <div class="field"><label>Take Profit (%) <span class="val" id="v_tp">4.0</span></label>
+          <input type="range" id="tp" min="0.5" max="30" step="0.1" value="4.0"></div>
+        <div class="field"><label>Position Size (% of capital) <span class="val" id="v_ps">10</span></label>
+          <input type="range" id="ps" min="5" max="100" step="5" value="10"></div>
+        <div class="note">Sliders update the market and strategy live. Use Run Simulation to reseed randomness.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="panel">
+      <div class="chart-head">
+        <h3>📈 Synthetic Market Price</h3>
+        <div class="legend" id="regimeLegend"></div>
+      </div>
+      <canvas id="marketChart" height="260"></canvas>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <div class="chart-head">
+          <h3>📈 Strategy Equity Curve</h3>
+          <div class="legend">
+            <span><span class="dot" style="background:var(--green)"></span>Portfolio Value</span>
+            <span><span class="dot" style="background:#556"></span>Buy &amp; Hold</span>
+          </div>
+        </div>
+        <canvas id="equityChart" height="200"></canvas>
+      </div>
+      <div class="panel">
+        <h3 style="margin-bottom:12px;">🏆 Performance Summary</h3>
+        <div class="stats" id="statsGrid"></div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h3 style="margin-bottom:10px;">📊 Performance by Regime</h3>
+        <table>
+          <thead><tr><th>Regime</th><th>Duration</th><th>Return</th><th>Max DD</th><th>Trades</th></tr></thead>
+          <tbody id="regimeTable"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3 style="margin-bottom:12px;">🥯 Trade Analysis</h3>
+        <div class="donut-wrap">
+          <canvas id="donutChart" width="140" height="140" style="width:140px;flex-shrink:0;"></canvas>
+          <div class="donut-legend" id="donutLegend"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<button id="aiBtn" class="ai-btn">✨ AI Copilot</button>
+<aside id="aiPanel" class="ai-panel" aria-label="AI Copilot">
+  <div class="ai-head"><b>✨ AI Copilot</b><span class="ai-sub">Qwen</span>
+    <button id="aiCfgBtn" title="Settings">⚙</button><button id="aiClose" title="Close">✕</button></div>
+  <div id="aiCfg" class="ai-cfg">
+    <label>Qwen API key<input type="password" id="aiKey" placeholder="sk-..." autocomplete="off"></label>
+    <label>Region<select id="aiRegion">
+      <option value="https://dashscope-intl.aliyuncs.com/compatible-mode/v1">International (Singapore)</option>
+      <option value="https://dashscope.aliyuncs.com/compatible-mode/v1">China (Beijing)</option></select></label>
+    <label>Model<select id="aiModel"><option>qwen-plus</option><option>qwen-max</option><option>qwen-turbo</option></select></label>
+    <div class="note">The key is saved only in this browser (localStorage) and sent only to Alibaba's API.</div>
+  </div>
+  <div id="aiLog" class="ai-log"></div>
+  <div class="ai-chips">
+    <button data-q="Analyze this run: what worked, what didn't, and how do I improve the strategy?">Analyze this run</button>
+    <button data-q="Make the market harder for my strategy and tell me what changed.">Stress it</button>
+    <button data-q="Generate a market that behaves like Apple (AAPL) stock and test my strategy on it.">Apple-like market</button>
+    <button id="aiCsvBtn">Upload prices CSV</button>
+  </div>
+  <input type="file" id="aiCsv" accept=".csv,.txt" hidden>
+  <div class="ai-input"><textarea id="aiText" rows="2" placeholder="Ask, or tell me to change the market/strategy…"></textarea><button id="aiSend">Send</button></div>
+</aside>
+<script src="script.js"></script>
+<script src="ai.js"></script>
+</body>
+</html>
