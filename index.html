@@ -1,68 +1,600 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>RegimeLab — Design the Market. Stress the Strategy.</title>
-
-    <meta
-        name="description"
-        content="RegimeLab is an interactive market-regime simulator for testing trading strategies across changing market conditions."
-    >
-
-    <link rel="stylesheet" href="style.css">
-
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RegimeLab — Design the Market. Stress the Strategy.</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#1d1c19; --muted:#77736b; --soft:#a09b91; --line:#dedbd3;
+  --paper:#f5f3ed; --card:#fbfaf6; --sidebar:#ebe8df; --dark:#24231f; --accent:#8b7652;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+.app-shell{min-height:100%;display:grid;grid-template-columns:300px minmax(0,1fr)}
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;padding:28px 22px;background:var(--sidebar);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.brand-mark{width:36px;height:36px;display:grid;place-items:center;background:var(--dark);color:#fff;font-family:Georgia,serif;font-size:20px}
+.brand-name{font-family:Georgia,serif;font-size:19px}
+.brand-tag{margin-top:2px;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.section-label{font-size:9px;letter-spacing:.12em;font-weight:700;color:var(--soft);text-transform:uppercase;margin-bottom:12px}
+.sidebar-section{margin-bottom:24px}
+.field-label{display:block;font-size:12px;font-weight:600;margin-bottom:14px}
+select{width:100%;margin-top:7px;padding:9px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.control-group{margin-bottom:15px}
+.control-header{display:flex;justify-content:space-between;font-size:11px;color:#555149;margin-bottom:6px}
+input[type=range]{width:100%;height:3px;appearance:none;background:#c9c4b9;border-radius:10px}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:13px;height:13px;border-radius:50%;background:var(--dark);border:2px solid var(--card);box-shadow:0 0 0 1px var(--dark)}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:var(--dark);border:2px solid var(--card)}
+.btn{width:100%;min-height:42px;border:0;padding:11px;transition:transform .15s}
+.btn:hover{transform:translateY(-1px)}
+.btn-primary{background:var(--dark);color:#fff}
+.btn-secondary{margin-top:8px;background:transparent;border:1px solid #bdb8ae;color:var(--ink)}
+.main{min-width:0;max-width:1400px;margin:0 auto;padding:36px 40px 50px}
+.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:24px;flex-wrap:wrap}
+h1{font-family:Georgia,serif;font-weight:400;margin:6px 0 10px;font-size:clamp(30px,4vw,48px);letter-spacing:-.03em}
+h1 em{color:var(--accent);font-style:italic}
+h2{font-family:Georgia,serif;font-weight:400;margin:0 0 4px;font-size:20px}
+.subtitle{max-width:560px;margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.copilot-btn{display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--line);background:var(--card)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block}
+.status{display:grid;grid-template-columns:minmax(200px,1fr) repeat(3,auto);align-items:center;gap:20px;padding:16px 18px;margin-bottom:16px;background:var(--card);border:1px solid var(--line)}
+.status-main{display:flex;align-items:center;gap:10px}
+.status-value{margin-top:3px;font-family:Georgia,serif;font-size:17px}
+.status-label,.statlbl{font-size:9px;letter-spacing:.1em;color:var(--soft);text-transform:uppercase}
+.status-stat strong{display:block;font-size:12px;margin-top:3px}
+.card{background:var(--card);border:1px solid var(--line);margin-bottom:16px}
+.card-header{display:flex;justify-content:space-between;align-items:center;padding:18px 20px 10px}
+.chart-container{position:relative;height:340px;padding:6px 14px 16px}
+.metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.metric-card{padding:16px;background:var(--card);border:1px solid var(--line)}
+.metric-card span{display:block;margin-bottom:7px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.metric-card strong{display:block;font-family:Georgia,serif;font-size:22px;font-weight:400}
+.upload-card{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:20px}
+.upload-btn{display:inline-flex;align-items:center;padding:10px 14px;border:1px solid #bdb8ae;font-size:11px}
+.upload-btn input{display:none}
+.upload-status{color:var(--muted);font-size:10px;width:100%}
+.overlay{position:fixed;inset:0;z-index:50;background:rgba(25,24,21,.25);opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s}
+.overlay.open{opacity:1;visibility:visible}
+.panel{position:fixed;z-index:60;top:0;right:0;width:min(420px,100vw);height:100vh;display:flex;flex-direction:column;background:var(--card);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .25s}
+.panel.open{transform:translateX(0)}
+.panel-header{display:flex;justify-content:space-between;padding:24px 22px 16px;border-bottom:1px solid var(--line)}
+.close-btn{width:32px;height:32px;border:1px solid var(--line);background:transparent;font-size:20px}
+.panel-intro{padding:16px 22px;color:var(--muted);font-size:12px;line-height:1.6}
+.log{flex:1;overflow-y:auto;padding:0 22px 16px}
+.msg{margin-bottom:12px;padding:12px;border:1px solid var(--line);background:#f7f5ef;font-size:12px;line-height:1.55}
+.msg.user{background:#efede6}
+.msg .lbl{font-size:9px;letter-spacing:.1em;color:var(--soft);text-transform:uppercase;display:block;margin-bottom:5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{padding:7px 9px;border:1px solid var(--line);background:#fff;font-size:10px}
+.chip:hover{border-color:#aaa397}
+.input-area{padding:14px 22px 20px;border-top:1px solid var(--line)}
+.input-area textarea{width:100%;resize:vertical;min-height:70px;margin-bottom:9px;padding:10px;border:1px solid var(--line);background:#fff}
+footer{color:var(--soft);font-size:10px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+@media(max-width:900px){.app-shell{display:block}.sidebar{position:relative;height:auto}.metrics-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
 </head>
-
 <body>
-
 <div class="app-shell">
+<aside class="sidebar">
+  <div class="brand"><div class="brand-mark">R</div><div><div class="brand-name">RegimeLab</div><div class="brand-tag">Market simulation lab</div></div></div>
 
-    <!-- ================= SIDEBAR ================= -->
+  <div class="sidebar-section">
+    <div class="section-label">Market</div>
+    <label class="field-label">Regime
+      <select id="regime">
+        <option value="trending">Trending</option>
+        <option value="mean_reverting">Mean Reverting</option>
+        <option value="high_vol">High Volatility</option>
+        <option value="shock">Shock</option>
+      </select>
+    </label>
+    <div class="control-group"><div class="control-header"><span>Trend strength</span><output id="trend-val">0.30</output></div><input id="trend" type="range" min="0" max="1" step="0.01" value="0.30"></div>
+    <div class="control-group"><div class="control-header"><span>Mean reversion</span><output id="meanrev-val">0.20</output></div><input id="meanrev" type="range" min="0" max="1" step="0.01" value="0.20"></div>
+    <div class="control-group"><div class="control-header"><span>Volatility</span><output id="vol-val">0.20</output></div><input id="vol" type="range" min="0.05" max="1" step="0.01" value="0.20"></div>
+    <div class="control-group"><div class="control-header"><span>Shock probability</span><output id="shockp-val">0.010</output></div><input id="shockp" type="range" min="0" max="0.2" step="0.005" value="0.01"></div>
+    <div class="control-group"><div class="control-header"><span>Shock magnitude</span><output id="shockm-val">0.050</output></div><input id="shockm" type="range" min="0.01" max="0.2" step="0.005" value="0.05"></div>
+    <div class="control-group"><div class="control-header"><span>Persistence</span><output id="persist-val">0.85</output></div><input id="persist" type="range" min="0.05" max="1" step="0.01" value="0.85"></div>
+  </div>
 
-    <aside class="sidebar">
+  <div class="sidebar-section">
+    <div class="section-label">Simulation</div>
+    <div class="control-group"><div class="control-header"><span>Length (bars)</span><output id="len-val">1000</output></div><input id="len" type="range" min="100" max="5000" step="100" value="1000"></div>
+    <div class="control-group"><div class="control-header"><span>Initial capital</span><output id="cap-val">₹100,000</output></div><input id="cap" type="range" min="10000" max="1000000" step="10000" value="100000"></div>
+    <div class="control-group"><div class="control-header"><span>Moving average</span><output id="ma-val">20</output></div><input id="ma" type="range" min="5" max="100" step="1" value="20"></div>
+  </div>
 
-        <div class="brand">
-            <div class="brand-mark">R</div>
+  <div class="sidebar-section">
+    <div class="section-label">Strategy</div>
+    <div class="control-group"><div class="control-header"><span>Stop loss</span><output id="sl-val">3.0%</output></div><input id="sl" type="range" min="0.5" max="15" step="0.5" value="3"></div>
+    <div class="control-group"><div class="control-header"><span>Take profit</span><output id="tp-val">6.0%</output></div><input id="tp" type="range" min="0.5" max="30" step="0.5" value="6"></div>
+    <div class="control-group"><div class="control-header"><span>Position size</span><output id="ps-val">25%</output></div><input id="ps" type="range" min="5" max="100" step="5" value="25"></div>
+  </div>
 
-            <div>
-                <div class="brand-name">RegimeLab</div>
-                <div class="brand-tagline">
-                    Market simulation laboratory
-                </div>
-            </div>
-        </div>
+  <button id="generateBtn" class="btn btn-primary" type="button">Generate market</button>
+  <button id="resetBtn" class="btn btn-secondary" type="button">Reset parameters</button>
+</aside>
 
+<main class="main">
+  <header class="topbar">
+    <div>
+      <div class="section-label">Quantitative market simulation</div>
+      <h1>Design the market.<br><em>Stress the strategy.</em></h1>
+      <p class="subtitle">Construct market regimes, alter their behaviour, and observe how a strategy responds — live, as you move the controls.</p>
+    </div>
+    <button id="openCopilotBtn" class="copilot-btn" type="button"><span class="dot"></span>AI Copilot</button>
+  </header>
 
-        <div class="sidebar-section">
+  <section class="status">
+    <div class="status-main"><span class="dot"></span><div><div class="status-label">Current market</div><div id="regimeName" class="status-value">Trending</div></div></div>
+    <div class="status-stat"><span class="statlbl">Price</span><strong id="currentPrice">₹100.00</strong></div>
+    <div class="status-stat"><span class="statlbl">Observations</span><strong id="observationCount">1,000</strong></div>
+    <div class="status-stat"><span class="statlbl">Seed</span><strong id="seedDisplay">—</strong></div>
+  </section>
 
-            <div class="section-label">MARKET</div>
+  <section class="card">
+    <div class="card-header"><h2>Simulated price</h2></div>
+    <div class="chart-container"><canvas id="priceChart"></canvas></div>
+  </section>
 
-            <label class="field-label">
-                Market regime
+  <section class="metrics-grid">
+    <div class="metric-card"><span>Total return</span><strong id="totalReturn">0.00%</strong></div>
+    <div class="metric-card"><span>Sharpe ratio</span><strong id="sharpe">0.00</strong></div>
+    <div class="metric-card"><span>Max drawdown</span><strong id="maxDrawdown">0.00%</strong></div>
+    <div class="metric-card"><span>Win rate</span><strong id="winRate">0.00%</strong></div>
+  </section>
 
-                <select id="regime">
-                    <option value="trending">Trending</option>
-                    <option value="mean_reverting">Mean Reverting</option>
-                    <option value="high_vol">High Volatility</option>
-                    <option value="shock">Shock</option>
-                </select>
-            </label>
+  <section class="card">
+    <div class="card-header"><h2>Strategy equity</h2><div style="font-size:11px;color:var(--muted)">Final equity: <strong id="finalEquity" style="color:var(--ink)">₹100,000</strong></div></div>
+    <div class="chart-container"><canvas id="equityChart"></canvas></div>
+  </section>
 
+  <section class="metrics-grid">
+    <div class="metric-card"><span>Trades</span><strong id="numTrades">0</strong></div>
+    <div class="metric-card"><span>Average trade</span><strong id="avgTrade">0.00%</strong></div>
+    <div class="metric-card"><span>Profit factor</span><strong id="profitFactor">0.00</strong></div>
+  </section>
 
-            <div class="control-group">
-                <div class="control-header">
-                    <span>Trend strength</span>
-                    <output id="trendValue">0.30</output>
-                </div>
+  <section class="card upload-card">
+    <div style="flex:1;min-width:220px">
+      <div class="section-label">Real market data</div>
+      <h2>Upload a price series</h2>
+      <p style="margin:6px 0 0;color:var(--muted);font-size:12px">Load a CSV with a Close/Price column.</p>
+    </div>
+    <label class="upload-btn">Choose CSV<input id="csvInput" type="file" accept=".csv,text/csv"></label>
+    <div id="uploadStatus" class="upload-status">No file loaded.</div>
+  </section>
 
-                <input
-                    id="trend"
-                    type="range"
-                    min="0"
-                    max="1"
+  <footer><span>RegimeLab</span><span>Stochastic simulation · Strategy research · Quantitative experimentation</span></footer>
+</main>
+</div>
+
+<div id="copilotOverlay" class="overlay"></div>
+<aside id="copilotPanel" class="panel">
+  <div class="panel-header"><div><div class="section-label">RegimeLab intelligence</div><h2>AI Copilot</h2></div><button id="closeCopilotBtn" class="close-btn" type="button">×</button></div>
+  <div class="panel-intro">Describe the experiment you want to run. The Copilot reads your request locally and adjusts the simulation — no server required.</div>
+  <div id="copilotLog" class="log">
+    <div class="msg"><span class="lbl">Copilot</span>I can help configure the market. Try one of these:
+      <div class="chips">
+        <button class="chip" type="button">Create a strong trending market</button>
+        <button class="chip" type="button">Make the market highly volatile</button>
+        <button class="chip" type="button">Build a mean-reverting environment</button>
+        <button class="chip" type="button">Add frequent large shocks</button>
+      </div>
+    </div>
+  </div>
+  <div class="input-area">
+    <textarea id="copilotInput" placeholder="Describe your market experiment..." rows="3"></textarea>
+    <button id="copilotSendBtn" class="btn btn-primary" type="button">Send to Copilot</button>
+  </div>
+</aside>
+
+<script>
+(() => {
+"use strict";
+
+const DEFAULTS = {
+  regime:"trending", trend:0.30, meanrev:0.20, vol:0.20, shockp:0.01, shockm:0.05, persist:0.85,
+  len:1000, cap:100000, ma:20, sl:3, tp:6, ps:25
+};
+const SLIDER_IDS = ["trend","meanrev","vol","shockp","shockm","persist","len","cap","ma","sl","tp","ps"];
+const REGIME_LABEL = {trending:"Trending", mean_reverting:"Mean Reverting", high_vol:"High Volatility", shock:"Shock"};
+
+let state = {...DEFAULTS, seed:null, prices:[], equity:[], trades:[], realData:false};
+let priceChart=null, equityChart=null;
+const $ = id => document.getElementById(id);
+
+function money(v){ return "₹" + Number(v).toLocaleString("en-IN",{maximumFractionDigits:0}); }
+function pct(v){ return Number(v).toFixed(2) + "%"; }
+function clamp(v,min,max){ return Math.min(Math.max(Number(v),min),max); }
+
+function mulberry32(seed){
+  return function(){
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t>>>15, t | 1);
+    t ^= t + Math.imul(t ^ t>>>7, t | 61);
+    return ((t ^ t>>>14) >>> 0) / 4294967296;
+  };
+}
+function normalRandom(rng){
+  let u=0,v=0;
+  while(u===0) u=rng();
+  while(v===0) v=rng();
+  return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+}
+
+function generateMarket(){
+  const n = Math.round(state.len);
+  const rng = mulberry32(state.seed);
+  const prices = new Array(n);
+  prices[0] = 100;
+  let prevRet = 0;
+  for(let i=1;i<n;i++){
+    const noise = normalRandom(rng) * state.vol * 0.01;
+    let drift = 0;
+    if(state.regime === "trending"){
+      drift = state.trend*0.0009 + prevRet*state.persist*0.4;
+    } else if(state.regime === "mean_reverting"){
+      const deviation = prices[i-1] - 100;
+      drift = -state.meanrev * deviation * 0.0001;
+    } else if(state.regime === "high_vol"){
+      drift = (state.trend-0.5) * 0.0004;
+    } else if(state.regime === "shock"){
+      drift = state.trend * 0.0004;
+    }
+    let shock = 0;
+    if(rng() < state.shockp){
+      const dir = rng() < 0.5 ? -1 : 1;
+      shock = dir * state.shockm * (0.5 + rng());
+    }
+    const extraVol = state.regime === "high_vol" ? 1.8 : 1;
+    const ret = drift + noise*extraVol + shock;
+    prices[i] = Math.max(1, prices[i-1] * Math.exp(ret));
+    prevRet = ret;
+  }
+  return prices;
+}
+
+function movingAverage(values, period){
+  const result = new Array(values.length).fill(null);
+  let sum = 0;
+  for(let i=0;i<values.length;i++){
+    sum += values[i];
+    if(i >= period) sum -= values[i-period];
+    if(i >= period-1) result[i] = sum/period;
+  }
+  return result;
+}
+
+function backtest(prices){
+  const period = Math.round(state.ma);
+  const ma = movingAverage(prices, period);
+  let cash = Number(state.cap);
+  let position = 0, entryPrice = 0;
+  const equity = [];
+  const trades = [];
+  for(let i=0;i<prices.length;i++){
+    const price = prices[i];
+    if(i >= period && ma[i] !== null && ma[i-1] !== null){
+      if(position === 0){
+        if(prices[i-1] <= ma[i-1] && price > ma[i]){
+          const alloc = cash * (state.ps/100);
+          position = alloc/price;
+          cash -= alloc;
+          entryPrice = price;
+        }
+      } else {
+        const change = (price - entryPrice)/entryPrice * 100;
+        const stopHit = change <= -state.sl;
+        const targetHit = change >= state.tp;
+        const crossDown = prices[i-1] >= ma[i-1] && price < ma[i];
+        if(stopHit || targetHit || crossDown){
+          cash += position * price;
+          trades.push(change);
+          position = 0; entryPrice = 0;
+        }
+      }
+    }
+    equity.push(cash + position*price);
+  }
+  if(position > 0){
+    const finalPrice = prices[prices.length-1];
+    cash += position * finalPrice;
+    trades.push((finalPrice-entryPrice)/entryPrice*100);
+    equity[equity.length-1] = cash;
+  }
+  return {equity, trades};
+}
+
+function calculateMetrics(equity, trades){
+  const initial = Number(state.cap);
+  const final = equity[equity.length-1] ?? initial;
+  const totalReturn = (final-initial)/initial*100;
+  const returns = [];
+  for(let i=1;i<equity.length;i++){
+    if(equity[i-1] !== 0) returns.push((equity[i]-equity[i-1])/equity[i-1]);
+  }
+  const mean = returns.length ? returns.reduce((a,b)=>a+b,0)/returns.length : 0;
+  const variance = returns.length ? returns.reduce((s,v)=>s+(v-mean)**2,0)/returns.length : 0;
+  const sd = Math.sqrt(variance);
+  const sharpe = sd > 0 ? (mean/sd)*Math.sqrt(252) : 0;
+  let peak = equity[0] || initial, maxDD = 0;
+  for(const v of equity){ peak = Math.max(peak,v); maxDD = Math.min(maxDD, (v-peak)/peak*100); }
+  const wins = trades.filter(t=>t>0).length;
+  const winRate = trades.length ? wins/trades.length*100 : 0;
+  const avgTrade = trades.length ? trades.reduce((a,b)=>a+b,0)/trades.length : 0;
+  const gains = trades.filter(t=>t>0).reduce((a,b)=>a+b,0);
+  const losses = Math.abs(trades.filter(t=>t<0).reduce((a,b)=>a+b,0));
+  const profitFactor = losses > 0 ? gains/losses : (gains > 0 ? Infinity : 0);
+  return {totalReturn, sharpe, maxDrawdown:maxDD, winRate, finalEquity:final, numTrades:trades.length, avgTrade, profitFactor};
+}
+
+function destroyCharts(){
+  if(priceChart){ priceChart.destroy(); priceChart=null; }
+  if(equityChart){ equityChart.destroy(); equityChart=null; }
+}
+
+function createCharts(prices, equity){
+  destroyCharts();
+  const labels = prices.map((_,i)=>i+1);
+  const baseOptions = {
+    responsive:true, maintainAspectRatio:false, animation:{duration:150},
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{maxTicksLimit:8,color:"#99948a"},grid:{display:false}},
+      y:{ticks:{color:"#99948a"},grid:{color:"#e7e3db"}}
+    }
+  };
+  priceChart = new Chart($("priceChart").getContext("2d"), {
+    type:"line",
+    data:{labels, datasets:[{data:prices, borderColor:"#26251f", backgroundColor:"rgba(139,118,82,0.06)", borderWidth:1.5, pointRadius:0, tension:0.08, fill:true}]},
+    options:baseOptions
+  });
+  equityChart = new Chart($("equityChart").getContext("2d"), {
+    type:"line",
+    data:{labels, datasets:[{data:equity, borderColor:"#8b7652", backgroundColor:"rgba(139,118,82,0.07)", borderWidth:1.5, pointRadius:0, tension:0.08, fill:true}]},
+    options:baseOptions
+  });
+}
+
+function updateOutputs(){
+  $("trend-val").textContent = Number(state.trend).toFixed(2);
+  $("meanrev-val").textContent = Number(state.meanrev).toFixed(2);
+  $("vol-val").textContent = Number(state.vol).toFixed(2);
+  $("shockp-val").textContent = Number(state.shockp).toFixed(3);
+  $("shockm-val").textContent = Number(state.shockm).toFixed(3);
+  $("persist-val").textContent = Number(state.persist).toFixed(2);
+  $("len-val").textContent = Number(state.len).toLocaleString("en-IN");
+  $("cap-val").textContent = money(state.cap);
+  $("ma-val").textContent = Math.round(state.ma);
+  $("sl-val").textContent = Number(state.sl).toFixed(1)+"%";
+  $("tp-val").textContent = Number(state.tp).toFixed(1)+"%";
+  $("ps-val").textContent = Number(state.ps).toFixed(0)+"%";
+  $("regimeName").textContent = REGIME_LABEL[state.regime] || state.regime;
+}
+
+function updateMetrics(m){
+  $("totalReturn").textContent = pct(m.totalReturn);
+  $("sharpe").textContent = Number.isFinite(m.sharpe) ? m.sharpe.toFixed(2) : "0.00";
+  $("maxDrawdown").textContent = pct(m.maxDrawdown);
+  $("winRate").textContent = pct(m.winRate);
+  $("finalEquity").textContent = money(m.finalEquity);
+  $("numTrades").textContent = m.numTrades;
+  $("avgTrade").textContent = pct(m.avgTrade);
+  $("profitFactor").textContent = Number.isFinite(m.profitFactor) ? m.profitFactor.toFixed(2) : "∞";
+}
+
+function runSimulation(){
+  state.realData = false;
+  state.seed = Math.floor(Math.random()*4294967295);
+  const prices = generateMarket();
+  const result = backtest(prices);
+  state.prices = prices; state.equity = result.equity; state.trades = result.trades;
+  const metrics = calculateMetrics(result.equity, result.trades);
+  updateOutputs();
+  updateMetrics(metrics);
+  $("currentPrice").textContent = money(prices[prices.length-1]);
+  $("observationCount").textContent = prices.length.toLocaleString("en-IN");
+  $("seedDisplay").textContent = state.seed;
+  createCharts(prices, result.equity);
+}
+
+function readControls(){
+  for(const id of SLIDER_IDS){
+    const el = $(id);
+    if(el) state[id] = Number(el.value);
+  }
+  state.regime = $("regime").value;
+}
+
+function writeControls(){
+  $("regime").value = state.regime;
+  for(const id of SLIDER_IDS){
+    const el = $(id);
+    if(el) el.value = state[id];
+  }
+  updateOutputs();
+}
+
+function setupControls(){
+  $("regime").addEventListener("change", () => { readControls(); runSimulation(); });
+  for(const id of SLIDER_IDS){
+    const el = $(id);
+    el.addEventListener("input", () => {
+      readControls();
+      runSimulation(); // live update while dragging
+    });
+  }
+  $("generateBtn").addEventListener("click", () => { readControls(); runSimulation(); });
+  $("resetBtn").addEventListener("click", () => {
+    Object.assign(state, DEFAULTS);
+    writeControls();
+    runSimulation();
+  });
+}
+
+/* ---------------- CSV ---------------- */
+async function loadCSV(file){
+  const text = await file.text();
+  const rows = text.trim().split(/\r?\n/).map(row => row.split(/[,;\t]/).map(c => c.trim().replace(/^"|"$/g,"")));
+  if(rows.length < 2) throw new Error("The CSV does not contain enough rows.");
+  const header = rows[0].map(v => v.toLowerCase());
+  let priceIndex = header.findIndex(v => ["close","adj close","adj_close","close/last","price"].includes(v));
+  const firstRowNumeric = rows[0].some(v => Number.isFinite(Number(v.replace(/[$₹,]/g,""))));
+  const body = firstRowNumeric ? rows : rows.slice(1);
+  if(priceIndex < 0) priceIndex = rows[0].length - 1;
+  const prices = body.map(row => Number(String(row[priceIndex]).replace(/[$₹,]/g,""))).filter(v => Number.isFinite(v) && v > 0);
+  if(prices.length < 100) throw new Error("At least 100 valid prices are required.");
+  state.realData = true;
+  state.prices = prices.slice(-5000);
+  const result = backtest(state.prices);
+  state.equity = result.equity; state.trades = result.trades;
+  const metrics = calculateMetrics(result.equity, result.trades);
+  updateMetrics(metrics);
+  $("currentPrice").textContent = money(state.prices[state.prices.length-1]);
+  $("observationCount").textContent = state.prices.length.toLocaleString("en-IN");
+  $("seedDisplay").textContent = "REAL";
+  $("regimeName").textContent = "Observed Data";
+  createCharts(state.prices, state.equity);
+  $("uploadStatus").textContent = `Loaded ${state.prices.length.toLocaleString("en-IN")} prices from ${file.name}.`;
+  addCopilotMessage("ai", `Loaded ${state.prices.length.toLocaleString("en-IN")} observations from ${file.name}. I can now discuss this dataset.`);
+}
+
+$("csvInput").addEventListener("change", async event => {
+  const file = event.target.files[0];
+  if(!file) return;
+  try{ await loadCSV(file); }
+  catch(error){ $("uploadStatus").textContent = error.message; }
+  event.target.value = "";
+});
+
+/* ---------------- COPILOT (fully local — no backend required) ---------------- */
+const panel = $("copilotPanel"), overlay = $("copilotOverlay"), input = $("copilotInput"), log = $("copilotLog");
+
+function openCopilot(){ panel.classList.add("open"); overlay.classList.add("open"); setTimeout(()=>input.focus(),250); }
+function closeCopilot(){ panel.classList.remove("open"); overlay.classList.remove("open"); }
+$("openCopilotBtn").addEventListener("click", openCopilot);
+$("closeCopilotBtn").addEventListener("click", closeCopilot);
+overlay.addEventListener("click", closeCopilot);
+
+function escapeHTML(v){
+  return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+}
+function addCopilotMessage(type, message){
+  const wrapper = document.createElement("div");
+  wrapper.className = "msg" + (type==="user" ? " user" : "");
+  wrapper.innerHTML = `<span class="lbl">${type==="user"?"You":"Copilot"}</span>${escapeHTML(message)}`;
+  log.appendChild(wrapper);
+  log.scrollTop = log.scrollHeight;
+}
+
+function interpret(text){
+  const t = text.toLowerCase();
+  const has = (...words) => words.some(w => t.includes(w));
+  const patch = {};
+  const applied = [];
+
+  if(has("trend","uptrend","bull","bullish")){
+    patch.regime = "trending"; patch.trend = 0.85; patch.meanrev = 0.1; patch.persist = 0.85;
+    applied.push("trending regime");
+  }
+  if(has("mean revert","mean-revert","choppy","sideways","range")){
+    patch.regime = "mean_reverting"; patch.trend = 0.15; patch.meanrev = 0.85;
+    applied.push("mean-reverting regime");
+  }
+  if(has("volatil","stress","turbulent","wild")){
+    patch.regime = t.includes("stress") && !has("trend","mean revert") ? state.regime : (patch.regime || "high_vol");
+    patch.vol = 0.85;
+    applied.push("high volatility");
+  }
+  if(has("shock","crash","crashes","black swan")){
+    patch.regime = "shock"; patch.shockp = 0.06; patch.shockm = 0.12;
+    applied.push("frequent shocks");
+  }
+  if(has("calm","stable","low vol")){
+    patch.vol = 0.15; applied.push("lower volatility");
+  }
+  if(has("tight stop")){ patch.sl = 1.5; applied.push("tighter stop loss"); }
+  if(has("wide stop","wider stop")){ patch.sl = 8; applied.push("wider stop loss"); }
+  if(has("conservative","smaller position","less risk")){ patch.ps = 10; patch.sl = 2; applied.push("more conservative sizing"); }
+  if(has("aggressive","bigger position","more risk")){ patch.ps = 60; applied.push("larger position size"); }
+  if(has("longer","more data","more bars")){ patch.len = 3000; applied.push("longer simulation"); }
+  if(has("short","fewer bars")){ patch.len = 300; applied.push("shorter simulation"); }
+
+  if(Object.keys(patch).length === 0){
+    return {reply:"I can adjust things like trend, mean reversion, volatility, shocks, position size and stop-loss. Try \"make it strongly trending\" or \"add frequent crashes\".", patch:null};
+  }
+  return {reply:`Applied: ${applied.join(", ")}.`, patch};
+}
+
+function applyPatch(patch){
+  if(!patch) return;
+  if(typeof patch.regime === "string") state.regime = patch.regime;
+  for(const key of SLIDER_IDS){
+    if(patch[key] === undefined) continue;
+    const el = $(key);
+    if(!el) continue;
+    state[key] = clamp(Number(patch[key]), Number(el.min), Number(el.max));
+  }
+  writeControls();
+  runSimulation();
+}
+
+function sendCopilot(){
+  const message = input.value.trim();
+  if(!message) return;
+  input.value = "";
+  addCopilotMessage("user", message);
+  const {reply, patch} = interpret(message);
+  applyPatch(patch);
+  addCopilotMessage("ai", reply);
+}
+
+$("copilotSendBtn").addEventListener("click", sendCopilot);
+input.addEventListener("keydown", e => {
+  if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendCopilot(); }
+});
+document.querySelectorAll(".chip").forEach(chip => {
+  chip.addEventListener("click", () => { input.value = chip.textContent.trim(); sendCopilot(); });
+});
+
+/* ---------------- PUBLIC API ---------------- */
+window.RL = {
+  snapshot(){
+    return {
+      regime:state.regime, trend:state.trend, meanrev:state.meanrev, vol:state.vol,
+      shockp:state.shockp, shockm:state.shockm, persist:state.persist, len:state.len,
+      cap:state.cap, ma:state.ma, sl:state.sl, tp:state.tp, ps:state.ps,
+      seed:state.seed, observations:state.prices.length, realData:state.realData
+    };
+  },
+  apply(actions){ applyPatch(actions); },
+  loadPrices(prices){
+    state.prices = prices.slice(-5000);
+    state.realData = true;
+    const result = backtest(state.prices);
+    state.equity = result.equity; state.trades = result.trades;
+    updateMetrics(calculateMetrics(result.equity, result.trades));
+    $("currentPrice").textContent = money(state.prices[state.prices.length-1]);
+    $("observationCount").textContent = state.prices.length.toLocaleString("en-IN");
+    $("seedDisplay").textContent = "REAL";
+    createCharts(state.prices, state.equity);
+  }
+};
+
+/* ---------------- START ---------------- */
+setupControls();
+writeControls();
+runSimulation();
+
+})();
+</script>
+</body>
+</html>                    max="1"
                     step="0.01"
                     value="0.30"
                 >
